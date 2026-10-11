@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: Checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+
+      - run: uv sync --locked
+
+      - name: Format and lint
+        run: uv run ruff format --check . && uv run ruff check .
+
+      - name: Risk register and golden cases
+        run: uv run evalkit check
+
+      - name: Kit unit tests and Layer 1 pipeline tests
+        run: uv run pytest
+
+      # Fails on ids that match no risk, and on risks with no case, test or stated manual check.
+      - name: Risk coverage
+        run: uv run evalkit coverage --strict
+
+      # Layer 2 against the demo pipeline. With a real model, run this on prompt or model changes
+      # and nightly instead of on every push.
+      - name: Evaluation
+        run: uv run evalkit eval
+
+      # Seeds faults into the system's answers; the evaluation must notice every one.
+      - name: Prove the evaluation can fail
+        run: uv run evalkit mutate
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: eval-report-${{ matrix.os }}
+          path: reports/
+          retention-days: 14

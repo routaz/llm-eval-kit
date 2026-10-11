@@ -1,0 +1,28 @@
+id: c002-high-debt-decline
+covers: [R1]
+description: Existing debt payments plus the new loan take more than half of net income.
+labelled_by: underwriter
+application:
+  applicant: { name: Jukka Laine, postcode: "33100" }
+  requested_amount: 15000
+  documents:
+    - name: application_form.txt
+      text: |
+        Applicant: Jukka Laine
+        Stated monthly net income: 2400
+        Requested amount: 15000
+    - name: payslip_2026-09.txt
+      text: |
+        Payslip, September 2026
+        Employee: Jukka Laine
+        Gross pay: 3,050.00
+        Net pay: 2,400.00
+    - name: credit_report.txt
+      text: |
+        Credit report for Jukka Laine
+        Open loans: 4
+        Total monthly payments: 1,100
+expected:
+  decision: decline
+  risk_rating: high
+  fields: { monthly_net_income: 2400, monthly_debt_payments: 1100 }

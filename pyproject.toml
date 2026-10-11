@@ -1,0 +1,38 @@
+[project]
+name = "llm-eval-kit"
+version = "0.1.0"
+description = "A QA template for AI-assisted decision workflows: deterministic pipeline tests, a golden-dataset evaluation harness, and checks that prove the evaluation can fail."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "jsonschema>=4.23",
+    "pytest>=8.3",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+evalkit = "evalkit.cli:main"
+
+[dependency-groups]
+dev = ["ruff>=0.8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["evalkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "qa/tests"]
+pythonpath = ["."]
+markers = ["covers(*risk_ids): risk register ids this test covers, e.g. covers('R6')"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

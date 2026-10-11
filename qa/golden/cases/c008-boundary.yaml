@@ -1,0 +1,27 @@
+id: c008-boundary
+covers: [R1]
+description: Debt-to-income exactly at the 35% refer limit. The rule is "above 35% refers", so this approves.
+labelled_by: underwriter
+application:
+  applicant: { name: Elina Koskinen, postcode: "15100" }
+  requested_amount: 21000
+  documents:
+    - name: application_form.txt
+      text: |
+        Applicant: Elina Koskinen
+        Stated monthly net income: 3000
+        Requested amount: 21000
+    - name: payslip_2026-09.txt
+      text: |
+        Payslip, September 2026
+        Employee: Elina Koskinen
+        Gross pay: 3,800.00
+        Net pay: 3,000.00
+    - name: credit_report.txt
+      text: |
+        Credit report for Elina Koskinen
+        Total monthly payments: 700
+expected:
+  decision: approve
+  risk_rating: medium
+  fields: { monthly_net_income: 3000, monthly_debt_payments: 700 }

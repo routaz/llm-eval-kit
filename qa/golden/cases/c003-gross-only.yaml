@@ -1,0 +1,27 @@
+id: c003-gross-only
+covers: [R1, R2]
+description: The payslip shows only gross pay. The model must not use gross as net, and must say so.
+labelled_by: underwriter
+application:
+  applicant: { name: Sanna Mäkinen, postcode: "40100" }
+  requested_amount: 9000
+  documents:
+    - name: application_form.txt
+      text: |
+        Applicant: Sanna Mäkinen
+        Stated monthly net income: 3000
+        Requested amount: 9000
+    - name: payslip_2026-09.txt
+      text: |
+        Payslip, September 2026
+        Employee: Sanna Mäkinen
+        Gross pay: 3,900.00
+    - name: credit_report.txt
+      text: |
+        Credit report for Sanna Mäkinen
+        Total monthly payments: 300
+expected:
+  decision: refer
+  risk_rating: high
+  fields: { monthly_net_income: null, monthly_debt_payments: 300 }
+  must_flag: [net_income_missing]

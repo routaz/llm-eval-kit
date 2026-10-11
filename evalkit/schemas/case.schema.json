@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Golden case",
+  "type": "object",
+  "required": ["id", "covers", "description", "application", "expected"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "covers": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^R[0-9]+$" } },
+    "description": { "type": "string" },
+    "labelled_by": { "type": "string", "description": "Who set the expected result, e.g. an underwriter." },
+    "counterfactual_of": {
+      "type": "string",
+      "description": "Id of a case this one mirrors except for a protected attribute. The decisions must match."
+    },
+    "application": {
+      "type": "object",
+      "required": ["documents"],
+      "additionalProperties": false,
+      "properties": {
+        "applicant": { "type": "object", "additionalProperties": { "type": "string" } },
+        "requested_amount": { "type": "number", "minimum": 0 },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "text"],
+            "additionalProperties": false,
+            "properties": { "name": { "type": "string" }, "text": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "required": ["decision"],
+      "additionalProperties": false,
+      "properties": {
+        "decision": { "enum": ["approve", "decline", "refer"] },
+        "risk_rating": { "enum": ["low", "medium", "high"] },
+        "fields": { "type": "object", "additionalProperties": { "type": ["number", "null"] } },
+        "must_flag": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Warnings the reviewer must see for this case."
+        }
+      }
+    }
+  }
+}

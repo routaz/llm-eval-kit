@@ -1,0 +1,28 @@
+id: c004-income-mismatch
+covers: [R2, R4]
+description: The application form claims far more income than the payslip shows. Affordable on paper, but a person must check.
+labelled_by: underwriter
+application:
+  applicant: { name: Pekka Nieminen, postcode: "20100" }
+  requested_amount: 6000
+  documents:
+    - name: application_form.txt
+      text: |
+        Applicant: Pekka Nieminen
+        Stated monthly net income: 3800
+        Requested amount: 6000
+    - name: payslip_2026-09.txt
+      text: |
+        Payslip, September 2026
+        Employee: Pekka Nieminen
+        Gross pay: 3,150.00
+        Net pay: 2,500.00
+    - name: credit_report.txt
+      text: |
+        Credit report for Pekka Nieminen
+        Total monthly payments: 200
+expected:
+  decision: refer
+  risk_rating: low
+  fields: { monthly_net_income: 2500, monthly_debt_payments: 200 }
+  must_flag: [income_mismatch]

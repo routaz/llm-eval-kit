@@ -1,0 +1,53 @@
+system: Loan applications arrive by email. An AI reads the attachments and proposes a decision and risk rating. A person reviews the case and makes the final decision.
+
+# Ranked by harm and likelihood. Ids are referenced from golden cases, tests and faults.
+risks:
+  - id: R1
+    rank: 1
+    title: Wrong proposal or risk rating
+    example: Misread payslip, hallucinated income, wrong calculation
+    why: Direct financial loss and harm to applicants
+    layer: [pipeline, evaluation]
+
+  - id: R2
+    rank: 2
+    title: Confidently wrong AI
+    example: The AI is wrong but shows no uncertainty
+    why: The reviewer has no reason to look closer
+    layer: [evaluation]
+
+  - id: R3
+    rank: 3
+    title: Ineffective human oversight
+    example: Reviewers approve proposals without checking (automation bias)
+    why: The main safeguard disappears; EU AI Act Art. 14 requires effective oversight
+    layer: [pipeline, oversight]
+
+  - id: R4
+    rank: 4
+    title: Security and privacy
+    example: Prompt injection, forged documents, personal data leaking into logs
+    why: Applicants have a direct financial motive to attack; fraud and GDPR exposure
+    layer: [pipeline, evaluation]
+
+  - id: R5
+    rank: 5
+    title: Bias
+    example: A name or postcode acting as a proxy for a protected attribute
+    why: Systematic and invisible case by case; reduced by keeping protected data out of the prompt
+    layer: [pipeline, evaluation]
+
+  - id: R6
+    rank: 6
+    title: Lost or duplicated applications
+    example: Unreadable attachment, a missing document sent later as a reply
+    why: The applicant never gets an answer
+    layer: [pipeline]
+
+  - id: R7
+    rank: 7
+    title: Drift
+    example: A vendor model update or a new applicant mix
+    why: Quality drops without anyone noticing
+    layer: [monitoring]
+    manual: Production monitoring of override rate, flag rate and score distribution; rerun `evalkit eval` on every model or prompt change

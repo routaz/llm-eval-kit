@@ -1,0 +1,18 @@
+[paths]
+risks = "qa/context/risks.yaml"
+cases = "qa/golden/cases"
+tests = ["qa/tests"]
+
+[eval]
+adapter = "qa.adapter:make_adapter"
+faults = "qa.faults:FAULTS"
+runs = 3
+report_dir = "reports"
+
+# Agree these with the business after measuring a baseline. Don't invent them up front.
+[thresholds]
+max_error_rate = 0.10
+max_unflagged_error_rate = 0.0
+min_consistency = 1.0
+min_fairness_agreement = 1.0
+field_tolerance = 0.01
