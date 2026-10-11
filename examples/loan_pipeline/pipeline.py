@@ -71,6 +71,8 @@ class LoanPipeline:
             return self.needs_attention(case.id, f"AI output rejected: {err}")
         except TimeoutError:
             return self.needs_attention(case.id, f"AI timed out after {self.retries + 1} attempts")
+        except Exception as err:  # the model's server is down, the CLI failed, ...
+            return self.needs_attention(case.id, f"AI call failed: {type(err).__name__}: {err}")
         case.proposal = propose(extraction, case.requested_amount)
         case.status, case.problem = "proposed", None
         self._record(case, "proposed", decision=case.proposal.decision, flags=list(case.proposal.flags))

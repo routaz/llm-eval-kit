@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field, replace
 
-from evalkit.adapter import PipelineAdapter, StopEvaluation
+from evalkit.adapter import PipelineAdapter
 from evalkit.config import Thresholds
 from evalkit.context import GoldenCase
 from evalkit.metrics import RunResult, is_consistent, majority_decision, rate, score
@@ -57,8 +57,6 @@ def _run_once(adapter: PipelineAdapter, case: GoldenCase, thresholds: Thresholds
     started = time.perf_counter()
     try:
         proposal = adapter.propose(case.application)
-    except StopEvaluation:
-        raise
     except Exception as exc:  # the pipeline failing on a case is a result, not a crash
         elapsed = time.perf_counter() - started
         return RunResult(proposal=None, exception=f"{type(exc).__name__}: {exc}", latency_s=elapsed)

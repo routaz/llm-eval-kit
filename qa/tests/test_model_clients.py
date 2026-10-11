@@ -109,10 +109,12 @@ def test_a_local_model_answer_flows_through_the_pipeline(local_model):
 
 
 @pytest.mark.covers("R6")
-def test_an_unreachable_local_model_leaves_the_case_open_and_visible():
+def test_an_unreachable_model_sends_the_case_to_a_person():
     pipeline = LoanPipeline(OpenAICompatibleClient("http://127.0.0.1:9/v1", "output", timeout_s=2))
     case = pipeline.open_case({}, [Doc("payslip.txt", "Net pay: 3,200")], 12000)
 
-    with pytest.raises(RuntimeError, match="cannot reach"):
-        pipeline.analyse(case.id)
-    assert pipeline.cases[case.id].status == "received"
+    pipeline.analyse(case.id)
+
+    assert case.status == "needs_attention"
+    assert case.problem.startswith("AI call failed: RuntimeError: cannot reach")
+    assert case.proposal is None

@@ -9,7 +9,9 @@ Most "LLM testing" either asserts on exact model output, which is flaky, or eyeb
 - **An evaluation is only worth something if it can fail.** The kit seeds faults into the system's answers on purpose (inflated income, hidden warnings, an obeyed prompt injection, a biased decision) and checks that the evaluation notices each one.
 - **Risks first, tests second.** A ranked risk register is the source of truth. Every golden case, test and fault names the risk it covers, and CI fails if a risk has nothing behind it.
 
-> **Status:** Phase 2 done. The harness evaluates real models: Claude through your own Claude Code login, and local models you fine-tune with [Soup](https://github.com/MakazhanAlpamys/Soup). Real answers are recorded once and replayed in CI for free. 82 tests; CI on Linux and Windows.
+> **Status:** Phase 2 done. The harness evaluates real models: Claude through your own Claude Code login, and local models you fine-tune with [Soup](https://github.com/MakazhanAlpamys/Soup). Real answers are recorded once and replayed in CI for free. 83 tests; CI on Linux and Windows.
+
+**New here?** [The guide to the code](docs/guide.md) covers the entry points, what every file does, and what happens step by step when each command runs.
 
 ## How it fits together
 
@@ -178,7 +180,7 @@ Every generated label is cross-checked against what the documents say before tra
 
 **Rules live in code, not in the model.** The model extracts figures; debt-to-income and the decision thresholds are computed in code. That makes the rules exactly testable and leaves the model one job.
 
-**A bad answer goes to a person, never into a proposal.** Malformed JSON, a missing key, an amount that isn't a number or a timeout after retries all route the case to `needs_attention`. Nothing is guessed.
+**A bad answer goes to a person, never into a proposal.** Malformed JSON, a missing key, an amount that isn't a number, a timeout after retries or a model that can't be reached all route the case to `needs_attention`. Nothing is guessed.
 
 **Every email ends in exactly one visible outcome.** Opened, attached to an existing case, duplicate, needs attention or rejected. Nothing disappears silently.
 

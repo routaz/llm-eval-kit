@@ -2,6 +2,7 @@ from evalkit.config import Thresholds
 from evalkit.faults import (
     Fault,
     applicant_is,
+    case_is,
     chain,
     document_contains,
     drop_flags,
@@ -45,9 +46,14 @@ def test_conditional_faults_hit_only_matching_applications():
     by_text = when(document_contains("TEXT"), force_decision("decline"))
     other = case(applicant={"name": "B"}).application
 
+    by_case = when(case_is("c1"), force_decision("decline"))
+    elsewhere = case("c2").application
+
     assert by_name(APP, proposal(), 0).decision == "decline"
     assert by_name(other, proposal(), 0).decision == "approve"
     assert by_text(APP, proposal(), 0).decision == "decline"
+    assert by_case(APP, proposal(), 0).decision == "decline"
+    assert by_case(elsewhere, proposal(), 0).decision == "approve"
 
 
 def make_adapter():

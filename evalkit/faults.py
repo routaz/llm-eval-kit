@@ -106,3 +106,7 @@ def document_contains(text: str) -> Predicate:
 
 def applicant_is(field: str, value: str) -> Predicate:
     return lambda app: app.applicant.get(field) == value
+
+
+def case_is(*case_ids: str) -> Predicate:
+    return lambda app: app.case_id in case_ids

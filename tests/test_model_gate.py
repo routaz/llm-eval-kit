@@ -1,6 +1,17 @@
 import pytest
 
+from examples.loan_pipeline.documents import Doc
+from examples.loan_pipeline.pipeline import LoanPipeline
 from qa.model_gate import CallBudgetSpent, ModelGate, ReplayClient
+
+
+def test_a_spent_budget_passes_through_the_pipeline_instead_of_failing_the_case():
+    pipeline = LoanPipeline(ModelGate(PricedModel(), max_calls=0))
+    case = pipeline.open_case({}, [Doc("payslip.txt", "Net pay: 3,200")], 12000)
+
+    with pytest.raises(CallBudgetSpent):
+        pipeline.analyse(case.id)
+    assert case.status == "received"
 
 
 class PricedModel:
