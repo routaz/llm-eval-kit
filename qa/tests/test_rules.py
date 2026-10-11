@@ -1,5 +1,6 @@
 import pytest
 
+from examples.loan_pipeline.ai import EXTRACTION_SCHEMA, FLAG_CODES, build_prompt
 from examples.loan_pipeline.parsing import Extraction
 from examples.loan_pipeline.pipeline import debt_to_income, propose
 
@@ -40,6 +41,20 @@ def test_missing_income_never_produces_an_approve():
     proposal = propose(extraction(net=None), requested_amount=1000)
 
     assert (proposal.decision, proposal.risk_rating) == ("refer", "high")
+
+
+def test_reviewer_notes_are_shown_but_do_not_force_a_refer():
+    noted = Extraction(3000.0, 0.0, None, (), ("only one payslip provided",))
+
+    assert propose(noted, requested_amount=6000).decision == "approve"
+
+
+@pytest.mark.covers("R2")
+def test_the_prompt_names_every_flag_code_the_rules_rely_on():
+    prompt = build_prompt([])
+
+    assert all(code in prompt for code in FLAG_CODES)
+    assert EXTRACTION_SCHEMA["properties"]["flags"]["items"]["enum"] == list(FLAG_CODES)
 
 
 @pytest.mark.covers("R2")

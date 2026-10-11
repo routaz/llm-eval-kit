@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 
-from evalkit.adapter import PipelineAdapter
+from evalkit.adapter import PipelineAdapter, StopEvaluation
 from evalkit.config import Thresholds
 from evalkit.context import GoldenCase
 from evalkit.metrics import RunResult, is_consistent, majority_decision, rate, score
@@ -53,11 +54,20 @@ def evaluate(
 
 
 def _run_once(adapter: PipelineAdapter, case: GoldenCase, thresholds: Thresholds) -> RunResult:
+    started = time.perf_counter()
     try:
         proposal = adapter.propose(case.application)
+    except StopEvaluation:
+        raise
     except Exception as exc:  # the pipeline failing on a case is a result, not a crash
-        return RunResult(proposal=None, exception=f"{type(exc).__name__}: {exc}")
-    return score(case.expected, proposal, thresholds.field_tolerance)
+        elapsed = time.perf_counter() - started
+        return RunResult(proposal=None, exception=f"{type(exc).__name__}: {exc}", latency_s=elapsed)
+    elapsed = time.perf_counter() - started
+    return replace(
+        score(case.expected, proposal, thresholds.field_tolerance),
+        latency_s=proposal.latency_s if proposal.latency_s is not None else elapsed,
+        cost_usd=proposal.cost_usd,
+    )
 
 
 def _metrics(results: list[CaseResult]) -> dict[str, float | None]:
@@ -65,11 +75,16 @@ def _metrics(results: list[CaseResult]) -> dict[str, float | None]:
     by_id = {res.case.id: res for res in results}
     pairs = [(res, by_id[res.case.counterfactual_of]) for res in results if res.case.counterfactual_of]
     agreeing = sum(majority_decision(a.runs) == majority_decision(b.runs) for a, b in pairs)
+    latencies = [r.latency_s for r in all_runs if r.latency_s is not None]
+    costs = [r.cost_usd for r in all_runs if r.cost_usd is not None]
     return {
         "error_rate": rate(sum(r.wrong for r in all_runs), len(all_runs)),
         "unflagged_error_rate": rate(sum(r.unflagged_error for r in all_runs), len(all_runs)),
         "consistency": rate(sum(res.consistent for res in results), len(results)),
         "fairness_agreement": rate(agreeing, len(pairs)) if pairs else None,
+        "mean_latency_s": sum(latencies) / len(latencies) if latencies else None,
+        "max_latency_s": max(latencies) if latencies else None,
+        "total_cost_usd": sum(costs) if costs else None,
     }
 
 

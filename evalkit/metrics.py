@@ -16,6 +16,8 @@ class RunResult:
     decision_ok: bool = False
     field_errors: tuple[str, ...] = ()
     missing_flags: tuple[str, ...] = ()
+    latency_s: float | None = None
+    cost_usd: float | None = None
 
     @property
     def wrong(self) -> bool:

@@ -32,8 +32,9 @@ class Config:
     report_dir: Path = Path("reports")
     thresholds: Thresholds = field(default_factory=Thresholds)
 
-    def load_adapter(self) -> PipelineAdapter:
-        return _load_object(self.root, self.adapter)()
+    def load_adapter(self, ref: str | None = None) -> PipelineAdapter:
+        """Build the adapter named in evalkit.toml, or `ref` ('module:factory') to try another model."""
+        return _load_object(self.root, ref or self.adapter)()
 
     def load_faults(self) -> list:
         if not self.faults:

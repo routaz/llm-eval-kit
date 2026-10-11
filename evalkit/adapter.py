@@ -14,3 +14,11 @@ class PipelineAdapter(Protocol):
     """
 
     def propose(self, application: Application) -> Proposal: ...
+
+
+class StopEvaluation(Exception):
+    """Raise from an adapter to halt the whole run, e.g. when a call budget is spent.
+
+    Any other exception counts as a failed case; this one stops the evaluation and the
+    CLI reports why, so a budget limit never shows up as a model failure.
+    """

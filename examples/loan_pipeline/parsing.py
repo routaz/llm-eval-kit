@@ -17,6 +17,7 @@ class Extraction:
     monthly_debt_payments: float | None
     stated_monthly_income: float | None
     flags: tuple[str, ...]
+    notes: tuple[str, ...] = ()
 
 
 def parse_extraction(raw: str) -> Extraction:
@@ -29,11 +30,12 @@ def parse_extraction(raw: str) -> Extraction:
     missing = [k for k in (*FIELDS, "flags") if k not in data]
     if missing:
         raise AIOutputError(f"missing keys: {', '.join(missing)}")
-    flags = data["flags"]
-    if not isinstance(flags, list) or not all(isinstance(f, str) for f in flags):
-        raise AIOutputError("flags must be a list of strings")
+    flags, notes = data["flags"], data.get("notes", [])
+    for name, value in (("flags", flags), ("notes", notes)):
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise AIOutputError(f"{name} must be a list of strings")
     values = {k: to_amount(data[k], k) for k in FIELDS}
-    return Extraction(**values, flags=tuple(flags))
+    return Extraction(**values, flags=tuple(flags), notes=tuple(notes))
 
 
 def to_amount(value, name: str = "value") -> float | None:

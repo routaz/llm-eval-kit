@@ -36,6 +36,12 @@ jobs:
       - name: Risk coverage
         run: uv run evalkit coverage --strict
 
+      # Real Claude answers, recorded once (qa/recordings/) and replayed here with no model calls.
+      - name: Evaluation of recorded Claude answers
+        run: >-
+          uv run evalkit eval --adapter qa.adapter:make_replay_adapter
+          --cases c003-gross-only,c005-prompt-injection --runs 1
+
       # Layer 2 against the demo pipeline. With a real model, run this on prompt or model changes
       # and nightly instead of on every push.
       - name: Evaluation

@@ -1,0 +1,16 @@
+# QLoRA fine-tune for the extraction step. Fits a 10 GB GPU (RTX 3080).
+# Run from this folder:  soup train --config soup.yaml
+base: Qwen/Qwen2.5-7B-Instruct
+task: sft
+data:
+  train: ./data/train.jsonl
+  val_split: 0.1
+training:
+  epochs: 2
+  lr: 2e-4
+  batch_size: auto
+  lora:
+    r: 16
+    alpha: 32
+  quantization: 4bit
+output: ./output

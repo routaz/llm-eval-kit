@@ -6,3 +6,6 @@ __pycache__/
 reports/
 dist/
 *.egg-info/
+training/data/
+training/output/
+training/extraction.schema.json

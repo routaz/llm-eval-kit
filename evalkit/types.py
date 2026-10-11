@@ -29,12 +29,17 @@ class Proposal:
 
     `flags` are the warnings shown to the reviewer. Any flag counts as the system
     admitting uncertainty, which is what separates a flagged error from an unflagged one.
+
+    `cost_usd` and `latency_s` are optional. Set them when the model reports its own cost
+    or when replaying recorded calls; otherwise the kit measures latency itself.
     """
 
     decision: Decision
     risk_rating: RiskRating
     fields: dict[str, float | None] = field(default_factory=dict)
     flags: tuple[str, ...] = ()
+    cost_usd: float | None = None
+    latency_s: float | None = None
 
     def with_changes(self, **changes) -> Proposal:
         return replace(self, **changes)

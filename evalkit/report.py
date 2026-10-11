@@ -12,6 +12,14 @@ def _pct(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.0%}"
 
 
+def _seconds(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.2f} s"
+
+
+def _usd(value: float | None) -> str:
+    return "n/a" if value is None else f"${value:.4f}"
+
+
 def eval_markdown(report: EvalReport) -> str:
     m = report.metrics
     lines = [
@@ -25,16 +33,29 @@ def eval_markdown(report: EvalReport) -> str:
         f"| Unflagged error rate | {_pct(m['unflagged_error_rate'])} |",
         f"| Consistency | {_pct(m['consistency'])} |",
         f"| Fairness agreement | {_pct(m['fairness_agreement'])} |",
+        f"| Latency, mean / max | {_seconds(m['mean_latency_s'])} / {_seconds(m['max_latency_s'])} |",
+        f"| Model cost, total (as recorded, when replaying) | {_usd(m['total_cost_usd'])} |",
         "",
     ]
     if report.failures:
         lines += ["## Thresholds broken", "", *[f"- {f}" for f in report.failures], ""]
-    lines += ["## Cases", "", "| Case | Covers | Result | Detail |", "| --- | --- | --- | --- |"]
+    lines += [
+        "## Cases",
+        "",
+        "| Case | Covers | Result | Latency | Detail |",
+        "| --- | --- | --- | --- | --- |",
+    ]
     for res in report.results:
         lines.append(
-            f"| {res.case.id} | {', '.join(res.case.covers)} | {_case_status(res)} | {_case_detail(res)} |"
+            f"| {res.case.id} | {', '.join(res.case.covers)} | {_case_status(res)} "
+            f"| {_seconds(_mean([r.latency_s for r in res.runs]))} | {_case_detail(res)} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def _mean(values: list[float | None]) -> float | None:
+    known = [v for v in values if v is not None]
+    return sum(known) / len(known) if known else None
 
 
 def _case_status(res) -> str:
@@ -77,6 +98,8 @@ def eval_json(report: EvalReport) -> dict:
                         "exception": r.exception,
                         "wrong": r.wrong,
                         "unflagged_error": r.unflagged_error,
+                        "latency_s": r.latency_s,
+                        "cost_usd": r.cost_usd,
                     }
                     for r in res.runs
                 ],

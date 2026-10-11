@@ -9,7 +9,7 @@ Most "LLM testing" either asserts on exact model output, which is flaky, or eyeb
 - **An evaluation is only worth something if it can fail.** The kit seeds faults into the system's answers on purpose (inflated income, hidden warnings, an obeyed prompt injection, a biased decision) and checks that the evaluation notices each one.
 - **Risks first, tests second.** A ranked risk register is the source of truth. Every golden case, test and fault names the risk it covers, and CI fails if a risk has nothing behind it.
 
-> **Status:** Phase 1 done: the evaluation harness, the risk register and coverage, the fault seeding check, and a bundled demo loan pipeline with 60 tests. It runs offline and in CI with a deterministic stand-in model.
+> **Status:** Phase 2 done. The harness evaluates real models: Claude through your own Claude Code login, and local models you fine-tune with [Soup](https://github.com/MakazhanAlpamys/Soup). Real answers are recorded once and replayed in CI for free. 82 tests; CI on Linux and Windows.
 
 ## How it fits together
 
@@ -114,6 +114,45 @@ A fault that **survives** means the golden cases for that risk are too weak. A f
 
 The same idea carries into Layer 3: the errors the evaluation knows about are exactly the cases to seed into a reviewer's queue to measure whether people catch them.
 
+## Real models
+
+Every model sits behind the same one-method client, so swapping models never touches the evaluation. Pick one with `--adapter`:
+
+| Adapter | Model | Cost per call |
+| --- | --- | --- |
+| `qa.adapter:make_adapter` (default) | Deterministic stand-in, offline | none |
+| `qa.adapter:make_claude_adapter` | Claude Opus 5.5 via `claude -p`, your own Claude Code login | as reported by the CLI |
+| `qa.adapter:make_soup_adapter` | A local model served by `soup serve` | none |
+| `qa.adapter:make_replay_adapter` | Answers recorded from any of the above | none |
+
+**Paid models are capped.** A paid run stops before call number `EVALKIT_MAX_CALLS` + 1 (default 5), retries included, and says so instead of failing cases. Run a small slice first:
+
+```bash
+EVALKIT_MAX_CALLS=2 uv run evalkit eval --adapter qa.adapter:make_claude_adapter \
+  --cases c003-gross-only,c005-prompt-injection --runs 1
+```
+
+Each Claude call is one turn with no tools, a short system prompt in place of Claude Code's default, the output schema enforced, and an empty working folder so no project `CLAUDE.md` is sent. That keeps a call to a few seconds and about two cents. On a Claude subscription, that figure is the equivalent API price; the call counts against your plan's usage rather than being billed.
+
+**Record once, replay for free.** Every real answer is appended to `qa/recordings/<model>.jsonl`. `make_replay_adapter` plays them back, so CI evaluates real model output with no key and no cost, and a Layer 1 test checks every recorded answer still parses.
+
+**What the first real run found.** Claude got both cases right on substance: it refused to use gross pay as net, and it caught and ignored the hidden instruction. Both still failed, because the prompt asked for "anything the underwriter must check" without naming the flag codes the rules depend on. Claude wrote helpful sentences; the pipeline couldn't match them. The stand-in model had passed only because it was written with the codes built in. The fix was in the pipeline: the prompt now lists the codes, the schema enforces them, and free-text remarks go to a separate `notes` field. A Layer 1 test now pins that contract.
+
+### A local model with Soup
+
+[Soup](https://github.com/MakazhanAlpamys/Soup) fine-tunes an open model with QLoRA on a single GPU. The training data is synthetic, labelled by construction, and never contains a golden case:
+
+```bash
+uv run python -m training.generate --count 1000      # training/data/train.jsonl
+uv run evalkit leakcheck training/data/train.jsonl   # fails if any golden document leaked in
+cd training && soup train --config soup.yaml         # Qwen2.5-7B-Instruct, 4-bit QLoRA, ~8 GB VRAM
+soup serve --model ./output --port 8000 \
+  --structured-output json --json-schema extraction.schema.json
+cd .. && uv run evalkit eval --adapter qa.adapter:make_soup_adapter
+```
+
+Every generated label is cross-checked against what the documents say before training, so a labelling bug can't be learned. Running locally also means the documents never leave the machine.
+
 ## What's in the box
 
 | Path | Owner | What it does |
@@ -123,10 +162,14 @@ The same idea carries into Layer 3: the errors the evaluation knows about are ex
 | `evalkit/faults.py`, `mutate.py` | kit | Fault building blocks and the check that each one is caught |
 | `evalkit/coverage.py` | kit | Maps risks to golden cases, `@pytest.mark.covers` tests and faults |
 | `evalkit/schemas/` | kit | JSON schemas for the risk register and golden cases |
-| `evalkit/cli.py` | kit | `evalkit check · eval · coverage · mutate` |
+| `evalkit/leakage.py` | kit | Finds golden documents inside training data |
+| `evalkit/cli.py` | kit | `evalkit check · eval · coverage · mutate · leakcheck` |
 | `qa/context/risks.yaml` | project | The ranked risk register |
 | `qa/golden/cases/` | project | Labelled cases: typical, edge, adversarial, counterfactual |
-| `qa/adapter.py` | project | Connects the kit to the pipeline under test |
+| `qa/adapter.py` | project | Connects the kit to the pipeline under test; one factory per model |
+| `qa/model_gate.py` | project | Call cap, recording, replay, cost and latency tally around any model |
+| `qa/recordings/` | project | Real model answers, replayed in CI and Layer 1 |
+| `training/` | project | Synthetic training data generator and the Soup config for a local model |
 | `qa/faults.py` | project | Faults seeded for this pipeline, each tied to a risk |
 | `qa/tests/` | project | Layer 1: deterministic pipeline tests with the model mocked |
 | `examples/loan_pipeline/` | demo | Email intake, a model step, rules in code and an audit log, so the template runs on its own |
@@ -160,7 +203,7 @@ The same idea carries into Layer 3: the errors the evaluation knows about are ex
 ## Roadmap
 
 - [x] **Phase 1: Foundation.** Adapter contract, risk register and golden case schemas, evaluation harness with the unflagged error rate, consistency and counterfactual fairness, fault seeding check, coverage, demo pipeline, 60 tests, CI on Linux and Windows.
-- [ ] **Phase 2: Real models.** An adapter for a hosted LLM, recorded responses so Layer 1 can replay real model output, and cost and latency in the report.
+- [x] **Phase 2: Real models.** Claude through the Claude Code CLI, local models through Soup, a call cap for paid models, record and replay, cost and latency in the report, a synthetic training set with a leak check. The first real run found an under-specified prompt contract (see [Real models](#real-models)).
 - [ ] **Phase 3: Oversight.** Build a seeding plan for the review queue from known AI errors, and score a team's catch rate and wrong-approval rate from their decisions.
 - [ ] **Phase 4: Drift.** Compare evaluation runs over time and alert when a model or prompt change moves the metrics.
 
