@@ -5,7 +5,9 @@ from pathlib import Path
 
 from evalkit.coverage import CoverageReport
 from evalkit.evaluate import EvalReport
+from evalkit.history import Drift
 from evalkit.mutate import MutationRun
+from evalkit.oversight import OversightPlan, OversightScore
 
 
 def _pct(value: float | None) -> str:
@@ -79,9 +81,10 @@ def _case_detail(res) -> str:
     return "; ".join(dict.fromkeys(details)) or ""
 
 
-def eval_json(report: EvalReport) -> dict:
+def eval_json(report: EvalReport, adapter: str | None = None) -> dict:
     return {
         "passed": report.passed,
+        "adapter": adapter,
         "runs_per_case": report.runs_per_case,
         "metrics": report.metrics,
         "failures": report.failures,
@@ -109,11 +112,11 @@ def eval_json(report: EvalReport) -> dict:
     }
 
 
-def write_eval(report: EvalReport, folder: Path) -> tuple[Path, Path]:
+def write_eval(report: EvalReport, folder: Path, adapter: str | None = None) -> tuple[Path, Path]:
     folder.mkdir(parents=True, exist_ok=True)
     md, js = folder / "eval.md", folder / "eval.json"
     md.write_text(eval_markdown(report), encoding="utf-8")
-    js.write_text(json.dumps(eval_json(report), indent=2), encoding="utf-8")
+    js.write_text(json.dumps(eval_json(report, adapter), indent=2), encoding="utf-8")
     return md, js
 
 
@@ -150,4 +153,58 @@ def mutation_text(run: MutationRun) -> str:
             lines.append(f"{'':<10}no golden case covers {', '.join(r.fault.covers)}")
     caught = sum(r.status == "caught" for r in run.results)
     lines += ["", f"{caught}/{len(run.results)} faults caught"]
+    return "\n".join(lines)
+
+
+def drift_text(drift: Drift, baseline: dict) -> str:
+    when = baseline["saved_at"] + (f" ({baseline['label']})" if baseline.get("label") else "")
+    lines = [f"Compared with the baseline saved {when}", ""]
+    lines.append(f"{'Metric':<24}{'Baseline':>12}{'Now':>12}")
+    for name, old, new, worse in drift.metrics:
+        fmt = _usd if name == "total_cost_usd" else _seconds if name.endswith("_s") else _pct
+        lines.append(f"{name:<24}{fmt(old):>12}{fmt(new):>12}{'  WORSE' if worse else ''}")
+    if not drift.comparable:
+        lines += ["", "The runs covered different cases, so the metrics are shown but not judged."]
+    if drift.regressed:
+        lines += ["", "Passed before, failing now:", *[f"  {c}" for c in drift.regressed]]
+    if drift.fixed:
+        lines += ["", "Failing before, passing now:", *[f"  {c}" for c in drift.fixed]]
+    if drift.not_compared:
+        lines += ["", f"In only one of the two runs: {', '.join(drift.not_compared)}"]
+    lines += ["", "WORSE than the baseline" if drift.worse else "No drift"]
+    return "\n".join(lines)
+
+
+def oversight_plan_text(plan: OversightPlan) -> str:
+    seeded = [i for i in plan.items if i.kind == "seeded"]
+    lines = [
+        f"{len(plan.items)} queue items: {len(seeded)} seeded with a known error, "
+        f"{len(plan.items) - len(seeded)} correct controls"
+    ]
+    for item in seeded:
+        lines.append(
+            f"  {item.item_id}  {item.case_id}: {item.fault_id} "
+            f"proposes {item.proposal.decision}, correct is {item.correct_decision}"
+        )
+    if plan.unused_faults:
+        lines.append(
+            f"No decision-changing seed from: {', '.join(plan.unused_faults)} "
+            "(a single proposal's decision doesn't change, so reviewers can't show they caught it)"
+        )
+    return "\n".join(lines)
+
+
+def oversight_score_text(score: OversightScore) -> str:
+    lines = [
+        f"{score.reviews} reviews, team level",
+        "",
+        f"{'Catch rate':<22}{_pct(score.catch_rate):>8}   known errors not accepted as proposed",
+        f"{'Wrong-approval rate':<22}{_pct(score.wrong_approval_rate):>8}   wrong approvals approved anyway",
+        f"{'False-alarm rate':<22}{_pct(score.false_alarm_rate):>8}   correct proposals overridden",
+    ]
+    if score.by_fault:
+        lines += ["", "By kind of error (feeds reviewer training):"]
+        lines += [f"  {fault:<44}{caught}/{seen} caught" for fault, (caught, seen) in score.by_fault.items()]
+    if score.unreviewed:
+        lines += ["", f"Not reviewed yet: {', '.join(score.unreviewed)}"]
     return "\n".join(lines)

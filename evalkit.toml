@@ -2,6 +2,7 @@
 risks = "qa/context/risks.yaml"
 cases = "qa/golden/cases"
 tests = ["qa/tests"]
+history = "qa/history.jsonl"
 
 [eval]
 adapter = "qa.adapter:make_adapter"
@@ -16,3 +17,8 @@ max_unflagged_error_rate = 0.0
 min_consistency = 1.0
 min_fairness_agreement = 1.0
 field_tolerance = 0.01
+# How far a rate may move against its saved baseline before `evalkit drift` fails. The demo model
+# is deterministic, so 0; allow a few points for a real model's run-to-run noise.
+drift_tolerance = 0.0
+# Set min_catch_rate once the business has agreed what reviewers must catch; until then
+# `evalkit oversight score` reports without judging.

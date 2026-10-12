@@ -18,6 +18,8 @@ class Thresholds:
     min_consistency: float = 1.0
     min_fairness_agreement: float = 1.0
     field_tolerance: float = 0.01
+    drift_tolerance: float = 0.0
+    min_catch_rate: float | None = None
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,7 @@ class Config:
     adapter: str
     faults: str | None = None
     tests: tuple[Path, ...] = ()
+    history: Path | None = None
     runs: int = 3
     report_dir: Path = Path("reports")
     thresholds: Thresholds = field(default_factory=Thresholds)
@@ -56,6 +59,7 @@ def load_config(root: Path | None = None) -> Config:
         risks=root / paths["risks"],
         cases=root / paths["cases"],
         tests=tuple(root / p for p in paths.get("tests", [])),
+        history=root / paths["history"] if "history" in paths else None,
         adapter=ev["adapter"],
         faults=ev.get("faults"),
         runs=int(ev.get("runs", 3)),

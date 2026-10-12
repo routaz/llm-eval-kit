@@ -9,7 +9,7 @@ This repo tests an AI-assisted decision pipeline in three layers. `evalkit/` is 
 uv run ruff format . && uv run ruff check .
 uv run pytest
 uv run evalkit check && uv run evalkit coverage --strict
-uv run evalkit eval && uv run evalkit mutate
+uv run evalkit eval && uv run evalkit drift && uv run evalkit mutate
 ```
 
 ## Ground rules
@@ -27,3 +27,5 @@ uv run evalkit eval && uv run evalkit mutate
 - Paid models spend the user's plan. Never run `make_claude_adapter` without being asked, and then only
   with `--cases`, `--runs 1` and a small `EVALKIT_MAX_CALLS`. Use `make_replay_adapter` for everything else.
 - Training data comes from `training/generate.py` only. Run `evalkit leakcheck` on it before any training.
+- A failing `evalkit drift` is a regression to report, not a baseline to overwrite. Save a new baseline
+  (`evalkit eval --save --label ...`) only for a change the user meant to make.

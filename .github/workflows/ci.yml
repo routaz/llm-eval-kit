@@ -42,14 +42,25 @@ jobs:
           uv run evalkit eval --adapter qa.adapter:make_replay_adapter
           --cases c003-gross-only,c005-prompt-injection --runs 1
 
+      # Fails if a metric got worse, or a case that passed now fails, against qa/history.jsonl.
+      - name: Drift of recorded Claude answers
+        run: uv run evalkit drift
+
       # Layer 2 against the demo pipeline. With a real model, run this on prompt or model changes
       # and nightly instead of on every push.
       - name: Evaluation
         run: uv run evalkit eval
 
+      - name: Drift
+        run: uv run evalkit drift
+
       # Seeds faults into the system's answers; the evaluation must notice every one.
       - name: Prove the evaluation can fail
         run: uv run evalkit mutate
+
+      # Layer 3: builds the seeded review queue, so the tooling stays working.
+      - name: Oversight queue
+        run: uv run evalkit oversight plan
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}

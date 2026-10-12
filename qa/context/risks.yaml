@@ -50,4 +50,4 @@ risks:
     example: A vendor model update or a new applicant mix
     why: Quality drops without anyone noticing
     layer: [monitoring]
-    manual: Production monitoring of override rate, flag rate and score distribution; rerun `evalkit eval` on every model or prompt change
+    manual: Production monitoring of override rate, flag rate and score distribution; `evalkit drift` compares every evaluation with the saved baseline

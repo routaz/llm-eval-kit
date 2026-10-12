@@ -13,6 +13,8 @@ flowchart LR
     CLI --> MUT[mutate.py] --> FAU[faults.py]
     CLI --> COV[coverage.py]
     CLI --> LEAK[leakage.py]
+    CLI --> OV[oversight.py]
+    CLI --> HIS[history.py]
     CLI --> CTX[context.py + schemas/]
   end
   subgraph QA["qa/ — the project side"]
@@ -68,9 +70,12 @@ Everything starts in one of these places.
 | `evalkit eval` | How good is the model inside the pipeline? | Every threshold in `evalkit.toml` held |
 | `evalkit coverage [--strict]` | Which risks have cases, tests and faults behind them? | No unknown ids (and, with `--strict`, no uncovered risk) |
 | `evalkit mutate` | Can the evaluation actually fail? | The clean system passed, and every seeded fault was caught |
+| `evalkit drift` | Did the last evaluation get worse than the saved baseline? | No rate moved the wrong way beyond the tolerance, and no case stopped passing |
+| `evalkit oversight plan` | Which known-wrong proposals should go into the review queue? | Always, once the queue is written |
+| `evalkit oversight score --decisions FILE` | Did the team catch them? | The decisions file is valid (and, if `min_catch_rate` is set, the catch rate met it) |
 | `evalkit leakcheck FILE...` | Is any golden case inside the training data? | No golden document found |
 
-`eval` takes `--cases id1,id2`, `--runs N` and `--adapter module:factory`; `mutate` takes `--adapter`. Exit code 2 means a run was stopped on purpose (see `StopEvaluation` below).
+`eval` takes `--cases id1,id2`, `--runs N`, `--adapter module:factory`, and `--save --label TEXT` to keep the run as a baseline; `mutate` and `oversight plan` take `--adapter`. Exit code 2 means a run was stopped on purpose (see `StopEvaluation` below).
 
 ### Configuration: `evalkit.toml`
 
@@ -80,10 +85,13 @@ Everything starts in one of these places.
 | --- | --- | --- |
 | `[paths]` | `risks`, `cases` | every command, through `context.py` |
 | `[paths]` | `tests` | `coverage`, to collect `@pytest.mark.covers` |
+| `[paths]` | `history` | `eval --save` and `drift`: the committed baseline file |
 | `[eval]` | `adapter` | `eval`, `mutate`: `"module:factory"`, called once per run to build an adapter |
 | `[eval]` | `faults` | `mutate`, `coverage`: `"module:LIST"` of `Fault` objects |
 | `[eval]` | `runs`, `report_dir` | `eval`, `mutate` |
 | `[thresholds]` | `max_error_rate` and the rest | `evaluate.py` `_check()` |
+| `[thresholds]` | `drift_tolerance` | `drift`: how far a rate may move before it counts |
+| `[thresholds]` | `min_catch_rate` (optional) | `oversight score`: unset means report without judging |
 
 `Config.load_adapter()` and `load_faults()` import the named object with `importlib`, after putting the repo root on `sys.path`. That is how the kit reaches `qa/` without importing it.
 
@@ -119,6 +127,8 @@ Two `Proposal`s exist on purpose. The pipeline has its own; the adapter translat
 | [`mutate.py`](../evalkit/mutate.py) | Runs a clean baseline, then each fault on the cases covering its risk; reports caught, survived or uncovered | `mutate()`, `MutationRun` |
 | [`coverage.py`](../evalkit/coverage.py) | Collects `covers` markers from pytest without running tests; maps every risk to cases, tests and faults | `build_coverage()`, `collect_test_covers()` |
 | [`leakage.py`](../evalkit/leakage.py) | Searches training JSONL for any golden document | `find_leaks()`, `read_rows()` |
+| [`oversight.py`](../evalkit/oversight.py) | Builds the seeded review queue and its answer key; reads and scores the team's decisions | `build_plan()`, `queue_rows()`, `answer_key()`, `read_decisions()`, `score_decisions()` |
+| [`history.py`](../evalkit/history.py) | Turns an eval report into a baseline entry; finds the latest baseline for an adapter; compares two runs | `summarise()`, `save()`, `latest_baseline()`, `compare()` |
 | [`report.py`](../evalkit/report.py) | Turns results into Markdown, JSON and terminal text | `eval_markdown()`, `eval_json()`, `write_eval()` |
 
 ### `qa/` — the project side
@@ -131,6 +141,7 @@ Two `Proposal`s exist on purpose. The pipeline has its own; the adapter translat
 | [`context/risks.yaml`](../qa/context/risks.yaml) | The ranked risk register, R1–R7. The source of truth. |
 | [`golden/cases/`](../qa/golden/cases/) | Eight labelled cases. `expected:` blocks are set by experts and never edited to match the system. |
 | [`recordings/`](../qa/recordings/) | Real model answers, one JSONL file per model, keyed by a hash of the prompt. |
+| [`history.jsonl`](../qa/history.jsonl) | Saved evaluation baselines, one line per `eval --save`: adapter, label, metrics, each case's result. |
 | [`tests/`](../qa/tests/) | Layer 1: deterministic pipeline tests. `conftest.py` provides `ScriptedAI` (a fake model) and `make_email()`. |
 
 ### `examples/loan_pipeline/` — the system under test
@@ -241,6 +252,22 @@ Every transition appends an event to `pipeline.audit` and logs the case id and e
 2. `build_coverage()` maps each risk to the cases, tests and faults that name it, and lists any id that matches no risk.
 3. A risk is **covered** with at least one case or test, **manual** when `risks.yaml` says how it's handled outside code, and **missing** otherwise. `--strict` fails on missing risks; unknown ids always fail.
 
+### `evalkit oversight plan` and `score`
+
+1. For each fault, `build_plan()` takes the golden cases covering the fault's risk and asks a **fresh** fault-wrapped adapter for a proposal.
+2. It keeps the proposal as a **seed** only if the decision differs from the expected one. A fault that changes only figures or flags can't be detected through a decision, so it's listed as unused.
+3. A clean adapter proposes every case; the correct proposals become **controls**.
+4. Seeds and controls are shuffled with `--seed` and numbered `item-001`… `queue_rows()` writes what the review system needs (documents, applicant, the proposal) to `queue.json`; `answer_key()` writes what only QA may see (kind, fault, correct decision) to `answer_key.json`.
+5. After the reviews, `read_decisions()` reads `item_id,decision` rows. It refuses unknown items, unknown decisions and any extra column, so a reviewer column can't be added.
+6. `score_decisions()` counts a seed as **caught** when the reviewer didn't accept the proposed decision. It reports the catch rate, the wrong-approval rate (wrong approvals approved anyway), the false-alarm rate (correct controls overridden), a per-fault breakdown and the items nobody has reviewed yet.
+
+### `evalkit eval --save` and `evalkit drift`
+
+1. `eval` writes the adapter it used into `eval.json`. With `--save`, `summarise()` keeps the metrics and each case's status, and `save()` appends them to `qa/history.jsonl` with a timestamp and label.
+2. `drift` reads the latest `reports/eval.json` and finds the most recent baseline with the **same adapter**: a stand-in run is never compared with a Claude run.
+3. `compare()` judges the quality rates only when both runs covered the same cases, using `drift_tolerance`. Latency and cost are shown, never judged.
+4. It compares every case present in both runs: passed then and not now is a **regression** and fails the command regardless of the averages; the opposite is listed as fixed.
+
 ### Recording and replay
 
 1. A recording factory (`make_claude_adapter`, `make_soup_adapter`) gives its `ModelGate` a `record_to` path under `qa/recordings/`.
@@ -266,10 +293,11 @@ Every transition appends an event to `pipeline.audit` and logs the case id and e
 3. `evalkit check`.
 4. `pytest`: kit unit tests and Layer 1.
 5. `evalkit coverage --strict`.
-6. `evalkit eval` on the recorded Claude answers (no calls).
-7. `evalkit eval` on the stand-in model.
+6. `evalkit eval` on the recorded Claude answers (no calls), then `evalkit drift` against its baseline.
+7. `evalkit eval` on the stand-in model, then `evalkit drift`.
 8. `evalkit mutate`.
-9. Upload `reports/` as an artifact.
+9. `evalkit oversight plan`, so the Layer 3 tooling keeps working.
+10. Upload `reports/` as an artifact.
 
 No step calls a paid model or needs a secret.
 
@@ -283,4 +311,6 @@ No step calls a paid model or needs a secret.
 | Add a Layer 1 test | A test in `qa/tests/` with `@pytest.mark.covers("R<n>")`, using `ScriptedAI` | `pytest`, `evalkit coverage --strict` |
 | Try another model | A client with `complete(prompt) -> str` (optionally `last_cost_usd`, `last_latency_s`), and a factory in `qa/adapter.py` | `evalkit eval --adapter qa.adapter:<factory> --cases … --runs 1` |
 | Change the prompt | Edit `examples/loan_pipeline/ai.py` | `pytest`, then re-record: old recordings no longer match |
+| Accept a new baseline | After a change you meant to make, `evalkit eval --save --label "why"` | `evalkit drift` |
+| Run an oversight test | `evalkit oversight plan`, load `queue.json` into the review system, collect `item_id,decision` | `evalkit oversight score --decisions …` |
 | Point the kit at your own system | Rewrite `qa/adapter.py`, the risks, cases and faults; delete `examples/` | Everything |

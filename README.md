@@ -9,7 +9,7 @@ Most "LLM testing" either asserts on exact model output, which is flaky, or eyeb
 - **An evaluation is only worth something if it can fail.** The kit seeds faults into the system's answers on purpose (inflated income, hidden warnings, an obeyed prompt injection, a biased decision) and checks that the evaluation notices each one.
 - **Risks first, tests second.** A ranked risk register is the source of truth. Every golden case, test and fault names the risk it covers, and CI fails if a risk has nothing behind it.
 
-> **Status:** Phase 2 done. The harness evaluates real models: Claude through your own Claude Code login, and local models you fine-tune with [Soup](https://github.com/MakazhanAlpamys/Soup). Real answers are recorded once and replayed in CI for free. 83 tests; CI on Linux and Windows.
+> **Status:** All four phases done. The harness evaluates real models (Claude through your own Claude Code login, local models fine-tuned with [Soup](https://github.com/MakazhanAlpamys/Soup)), tests whether human reviewers catch known errors, and flags drift against a saved baseline. 97 tests; CI on Linux and Windows.
 
 **New here?** [The guide to the code](docs/guide.md) covers the entry points, what every file does, and what happens step by step when each command runs.
 
@@ -23,14 +23,14 @@ flowchart TD
   L2["<b>Layer 2: evaluation</b><br/>real pipeline, real model<br/>N runs per case"]:::code
   FAULTS["<b>Fault check</b><br/>seeded defects must<br/>break the thresholds"]:::code
   COV["<b>Coverage</b><br/>every risk has a case,<br/>a test, or a stated manual check"]:::code
-  L3["<b>Layer 3: oversight</b><br/>reviewers, training,<br/>production monitoring"]:::person
+  L3["<b>Layer 3: oversight</b><br/>seeded review queue,<br/>team catch rate"]:::person
 
   RISKS --> GOLDEN --> L2 --> FAULTS
   RISKS --> L1
   RISKS --> COV
   L1 --> COV
   GOLDEN --> COV
-  L2 -. "known AI errors seed<br/>oversight tests" .-> L3
+  L2 -. "known AI errors seed<br/>the review queue" .-> L3
 
   classDef person fill:#dbeafe,stroke:#2563eb,color:#0f172a
   classDef code fill:#e5e7eb,stroke:#4b5563,color:#0f172a
@@ -47,6 +47,8 @@ uv run evalkit check             # validate the risk register and golden cases
 uv run evalkit eval              # Layer 2: run the golden dataset, write reports/eval.md
 uv run evalkit coverage --strict # which risks have cases, tests and faults
 uv run evalkit mutate            # seed faults and prove the evaluation catches each
+uv run evalkit drift             # compare the last evaluation with the saved baseline
+uv run evalkit oversight plan    # Layer 3: a review queue seeded with known errors
 ```
 
 Python 3.11 or newer, with [uv](https://docs.astral.sh/uv/). CI runs everything on Linux and Windows.
@@ -57,7 +59,7 @@ Python 3.11 or newer, with [uv](https://docs.astral.sh/uv/). CI runs everything 
 | --- | --- | --- | --- |
 | **1. Pipeline** | Intake, parsing of the model's output, business rules, audit trail, privacy | Plain pytest with the model replaced by a scripted fake, so every result is exact | Every commit |
 | **2. Evaluation** | The model inside the real pipeline | Golden cases run N times; error rate, unflagged error rate, consistency, counterfactual fairness, all against agreed thresholds | Every prompt or model change, and nightly |
-| **3. Oversight** | Whether the human reviewer is a real safeguard | Outside the code: seeded known errors in the review queue, reviewer training, override-rate monitoring | Before go-live, and when the model, UI or workload changes |
+| **3. Oversight** | Whether the human reviewer is a real safeguard | Known-wrong proposals seeded into the review queue with correct controls; the team's catch rate, wrong-approval rate and false-alarm rate | Before go-live, and when the model, UI or workload changes |
 
 ## What the evaluation measures
 
@@ -116,6 +118,58 @@ A fault that **survives** means the golden cases for that risk are too weak. A f
 
 The same idea carries into Layer 3: the errors the evaluation knows about are exactly the cases to seed into a reviewer's queue to measure whether people catch them.
 
+## Layer 3: do reviewers catch the errors?
+
+The person who approves each proposal is the system's main safeguard, and the EU AI Act (Art. 14) expects that oversight to be effective, not just present. `evalkit oversight` measures it.
+
+```bash
+uv run evalkit oversight plan                                  # reports/oversight/queue.json + answer_key.json
+uv run evalkit oversight score --decisions decisions.csv       # item_id,decision per review
+```
+
+**The plan** applies each fault in `qa/faults.py` to the golden cases it covers and keeps the ones that change the decision: a reviewer can only show they caught an error by deciding differently. The clean system's correct proposals go in as **controls**; without them, a reviewer who overrides everything would score perfectly. The queue is shuffled, and `queue.json` carries nothing that marks an item as seeded. The answer key stays with QA.
+
+```
+12 queue items: 4 seeded with a known error, 8 correct controls
+  item-001  c003-gross-only: approves-everything proposes approve, correct is refer
+  item-006  c005-prompt-injection: obeys-injection proposes approve, correct is refer
+```
+
+**The score** reads one row per review and reports three team-level rates, plus a breakdown by kind of error that tells training where to focus:
+
+```
+Catch rate                 75%   known errors not accepted as proposed
+Wrong-approval rate        33%   wrong approvals approved anyway
+False-alarm rate           67%   correct proposals overridden
+
+By kind of error (feeds reviewer training):
+  obeys-injection                             0/1 caught
+```
+
+The decisions file has no reviewer column, and one with a third column is refused: the results describe the team and the process, never a person. Agree the testing with reviewers in advance; only the timing is unannounced. Seeded items must be intercepted before they reach a real applicant, which is the review system's job. Two limits to keep in mind: catch rates can look better than reality if reviewers suspect a test, and seeds only cover the mistakes someone thought to plant. Set `min_catch_rate` in `evalkit.toml` once the business has agreed one; until then the score reports without judging.
+
+## Drift: did a change make things worse?
+
+```bash
+uv run evalkit eval --save --label "prompt v2"   # keep this run as the baseline, in qa/history.jsonl
+uv run evalkit drift                             # compare the last evaluation with it
+```
+
+`--save` appends the run's metrics and each case's result to `qa/history.jsonl`, which is committed, so the history is part of the repo. `drift` compares the latest report with the most recent baseline **from the same adapter** and fails when:
+
+- a quality rate moves the wrong way by more than `drift_tolerance` (0 for the deterministic demo; a few points for a real model), or
+- **any case that passed before fails now**, even if the averages hold.
+
+Rates are only judged when both runs covered the same cases; latency and cost are shown but never judged. CI runs `drift` after each evaluation. Tightening the refer limit from 35% to 30%, a change that looks harmless, fails it like this:
+
+```
+error_rate                        0%         12%  WORSE
+unflagged_error_rate              0%         12%  WORSE
+
+Passed before, failing now:
+  c008-boundary
+```
+
 ## Real models
 
 Every model sits behind the same one-method client, so swapping models never touches the evaluation. Pick one with `--adapter`:
@@ -165,12 +219,15 @@ Every generated label is cross-checked against what the documents say before tra
 | `evalkit/coverage.py` | kit | Maps risks to golden cases, `@pytest.mark.covers` tests and faults |
 | `evalkit/schemas/` | kit | JSON schemas for the risk register and golden cases |
 | `evalkit/leakage.py` | kit | Finds golden documents inside training data |
-| `evalkit/cli.py` | kit | `evalkit check · eval · coverage · mutate · leakcheck` |
+| `evalkit/oversight.py` | kit | Builds the seeded review queue and scores the team's decisions |
+| `evalkit/history.py` | kit | Saves baselines and compares runs for drift |
+| `evalkit/cli.py` | kit | `evalkit check · eval · drift · coverage · mutate · oversight · leakcheck` |
 | `qa/context/risks.yaml` | project | The ranked risk register |
 | `qa/golden/cases/` | project | Labelled cases: typical, edge, adversarial, counterfactual |
 | `qa/adapter.py` | project | Connects the kit to the pipeline under test; one factory per model |
 | `qa/model_gate.py` | project | Call cap, recording, replay, cost and latency tally around any model |
 | `qa/recordings/` | project | Real model answers, replayed in CI and Layer 1 |
+| `qa/history.jsonl` | project | Saved evaluation baselines, one line per `eval --save` |
 | `training/` | project | Synthetic training data generator and the Soup config for a local model |
 | `qa/faults.py` | project | Faults seeded for this pipeline, each tied to a risk |
 | `qa/tests/` | project | Layer 1: deterministic pipeline tests with the model mocked |
@@ -206,8 +263,8 @@ Every generated label is cross-checked against what the documents say before tra
 
 - [x] **Phase 1: Foundation.** Adapter contract, risk register and golden case schemas, evaluation harness with the unflagged error rate, consistency and counterfactual fairness, fault seeding check, coverage, demo pipeline, 60 tests, CI on Linux and Windows.
 - [x] **Phase 2: Real models.** Claude through the Claude Code CLI, local models through Soup, a call cap for paid models, record and replay, cost and latency in the report, a synthetic training set with a leak check. The first real run found an under-specified prompt contract (see [Real models](#real-models)).
-- [ ] **Phase 3: Oversight.** Build a seeding plan for the review queue from known AI errors, and score a team's catch rate and wrong-approval rate from their decisions.
-- [ ] **Phase 4: Drift.** Compare evaluation runs over time and alert when a model or prompt change moves the metrics.
+- [x] **Phase 3: Oversight.** A review queue seeded with known-wrong proposals and correct controls, scored at team level for catch rate, wrong-approval rate and false alarms, broken down by kind of error.
+- [x] **Phase 4: Drift.** Saved baselines in a committed history file, and a `drift` check in CI that fails on worse rates or any case that stopped passing.
 
 ## Licence
 
