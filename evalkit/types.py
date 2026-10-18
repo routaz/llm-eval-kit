@@ -32,6 +32,9 @@ class Proposal:
 
     `cost_usd` and `latency_s` are optional. Set them when the model reports its own cost
     or when replaying recorded calls; otherwise the kit measures latency itself.
+
+    `model` is optional too: the exact model that produced the proposal. It is saved with
+    every report and baseline, so a result can be traced to the model behind it.
     """
 
     decision: Decision
@@ -40,6 +43,7 @@ class Proposal:
     flags: tuple[str, ...] = ()
     cost_usd: float | None = None
     latency_s: float | None = None
+    model: str | None = None
 
     def with_changes(self, **changes) -> Proposal:
         return replace(self, **changes)

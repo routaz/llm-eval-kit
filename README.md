@@ -9,7 +9,7 @@ Most "LLM testing" either asserts on exact model output, which is flaky, or eyeb
 - **An evaluation is only worth something if it can fail.** The kit seeds faults into the system's answers on purpose (inflated income, hidden warnings, an obeyed prompt injection, a biased decision) and checks that the evaluation notices each one.
 - **Risks first, tests second.** A ranked risk register is the source of truth. Every golden case, test and fault names the risk it covers, and CI fails if a risk has nothing behind it.
 
-> **Status:** All four phases done. The harness evaluates real models (Claude through your own Claude Code login, local models fine-tuned with [Soup](https://github.com/MakazhanAlpamys/Soup)), tests whether human reviewers catch known errors, and flags drift against a saved baseline. 97 tests; CI on Linux and Windows.
+> **Status:** All five phases done. The harness evaluates real models (Claude through your own Claude Code login, local models fine-tuned with [Soup](https://github.com/MakazhanAlpamys/Soup)), tests whether human reviewers catch known errors, flags drift against a saved baseline, and can explain any single decision afterwards. 115 tests; CI on Linux and Windows.
 
 **New here?** [The guide to the code](docs/guide.md) covers the entry points, what every file does, and what happens step by step when each command runs.
 
@@ -170,6 +170,47 @@ Passed before, failing now:
   c008-boundary
 ```
 
+## Traceability: why did one decision go the way it did?
+
+Every proposal and every human decision lands in the pipeline's audit trail with enough to answer, long afterwards, what the decision was based on: **which documents** the model read, **which model and prompt** read them, **which figures** came out, **which rule** turned them into a proposal, and **what the person did** with it. `explain()` turns the trail into plain text:
+
+```python
+pipeline = LoanPipeline(ai, audit_to=Path("audit.jsonl"))
+...
+print(pipeline.explain("case-0001"))
+```
+
+```bash
+uv run python -m examples.loan_pipeline.audit audit.jsonl case-0001   # the same, from the file alone
+```
+
+```
+case-0001
+  2026-10-18T15:50:11+00:00  opened with 3 documents
+  2026-10-18T15:50:11+00:00  AI-assisted proposal: refer (risk high)
+      model: replay:claude-opus-5-5, prompt version 9ae18b9186f1, prompt sha256 8c290a16e085
+      documents read: application_form.txt (sha256 8ceaf4ec57ff), payslip_2026-09.txt (sha256 cff174df96bf), credit_report.txt (sha256 0fa836d23aa3)
+      figures: monthly_net_income 2100, monthly_debt_payments 700, stated_monthly_income 2100, requested_amount 20000, debt_to_income 0.4921
+      flags shown to the reviewer: suspicious_instruction
+      rule: debt-to-income 0.49 > 0.35 -> refer (rules in force: term_months 60, income_mismatch 0.1, decline_above 0.5, refer_above 0.35)
+  2026-10-18T15:50:11+00:00  decided decline by reviewer-2, overriding the proposed refer: "payslip contains an instruction to approve; treat as possible fraud"
+```
+
+| Question | Where the answer comes from |
+| --- | --- |
+| What was the decision based on? | Each document's name and SHA-256 hash. A hash proves which version was read without copying its content into the audit |
+| Which model? | The client's `model` attribute, recorded with every proposal and with every failed call |
+| Which instructions? | `prompt_version`, a hash of the prompt contract, which changes whenever the instructions change. `prompt_sha256` is the key recordings are stored under, so with a recording you can look up the model's exact raw answer |
+| Why this outcome? | The extracted figures, the rule that fired, and the thresholds in force at the time |
+| How did a person affect it? | Reviewer, final decision, the AI's proposal, whether it was an override, and the reason |
+| When? | Every event has a UTC timestamp |
+
+The audit carries document names, hashes and figures, never document text or the applicant's profile. A Layer 1 test runs a marker value through every path and checks the audit file never contains it. The reviewer's free-text reason is the one field a person writes, so in production, tell reviewers not to put personal data in it.
+
+The evaluation is traceable the same way: `eval.json` and every baseline in `qa/history.jsonl` record the models behind the runs and the git commit (`+dirty` for uncommitted changes), and `drift` says when the model changed since the baseline.
+
+These tests cover R3: a decision you can't reconstruct afterwards can't be overseen either.
+
 ## Real models
 
 Every model sits behind the same one-method client, so swapping models never touches the evaluation. Pick one with `--adapter`:
@@ -232,6 +273,7 @@ Every generated label is cross-checked against what the documents say before tra
 | `qa/faults.py` | project | Faults seeded for this pipeline, each tied to a risk |
 | `qa/tests/` | project | Layer 1: deterministic pipeline tests with the model mocked |
 | `examples/loan_pipeline/` | demo | Email intake, a model step, rules in code and an audit log, so the template runs on its own |
+| `examples/loan_pipeline/audit.py` | demo | Reads the audit trail and explains one decision in plain text |
 
 ## Design decisions
 
@@ -244,6 +286,8 @@ Every generated label is cross-checked against what the documents say before tra
 **Keep protected data out of the prompt.** The prompt carries the documents only, never the applicant profile. Layer 1 checks this; Layer 2 counterfactual pairs check the outcome.
 
 **The prompt says document text is data.** Prompt injection is tested both ways: the pipeline test checks the instruction is in the prompt, and a golden case checks a hidden instruction is flagged, not obeyed.
+
+**Every decision can be explained afterwards.** The audit records the model, prompt version, documents (by hash), figures, rule, thresholds and the person's decision, each with a timestamp. Rules are in code, so "why" is one line: the rule that fired.
 
 **Personal data stays out of the logs.** Logs carry case ids and events only. A test runs a case containing a marker value through every code path, including errors, and searches the logs for it.
 
@@ -265,6 +309,7 @@ Every generated label is cross-checked against what the documents say before tra
 - [x] **Phase 2: Real models.** Claude through the Claude Code CLI, local models through Soup, a call cap for paid models, record and replay, cost and latency in the report, a synthetic training set with a leak check. The first real run found an under-specified prompt contract (see [Real models](#real-models)).
 - [x] **Phase 3: Oversight.** A review queue seeded with known-wrong proposals and correct controls, scored at team level for catch rate, wrong-approval rate and false alarms, broken down by kind of error.
 - [x] **Phase 4: Drift.** Saved baselines in a committed history file, and a `drift` check in CI that fails on worse rates or any case that stopped passing.
+- [x] **Phase 5: Traceability.** Each decision can be explained afterwards: the documents read (by hash), the model and prompt version, the figures, the rule that fired and what the reviewer did, with timestamps, kept in an audit file. Baselines record the models and git commit behind them.
 
 ## Licence
 

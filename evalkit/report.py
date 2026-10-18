@@ -5,7 +5,7 @@ from pathlib import Path
 
 from evalkit.coverage import CoverageReport
 from evalkit.evaluate import EvalReport
-from evalkit.history import Drift
+from evalkit.history import Drift, git_commit
 from evalkit.mutate import MutationRun
 from evalkit.oversight import OversightPlan, OversightScore
 
@@ -85,6 +85,10 @@ def eval_json(report: EvalReport, adapter: str | None = None) -> dict:
     return {
         "passed": report.passed,
         "adapter": adapter,
+        "models": sorted(
+            {r.proposal.model for res in report.results for r in res.runs if r.proposal and r.proposal.model}
+        ),
+        "git_commit": git_commit(),
         "runs_per_case": report.runs_per_case,
         "metrics": report.metrics,
         "failures": report.failures,
@@ -103,6 +107,7 @@ def eval_json(report: EvalReport, adapter: str | None = None) -> dict:
                         "unflagged_error": r.unflagged_error,
                         "latency_s": r.latency_s,
                         "cost_usd": r.cost_usd,
+                        "model": r.proposal.model if r.proposal else None,
                     }
                     for r in res.runs
                 ],
@@ -159,6 +164,9 @@ def mutation_text(run: MutationRun) -> str:
 def drift_text(drift: Drift, baseline: dict) -> str:
     when = baseline["saved_at"] + (f" ({baseline['label']})" if baseline.get("label") else "")
     lines = [f"Compared with the baseline saved {when}", ""]
+    if drift.models_changed:
+        before, after = (", ".join(m) or "unknown" for m in drift.models_changed)
+        lines += [f"The model changed: {before} -> {after}", ""]
     lines.append(f"{'Metric':<24}{'Baseline':>12}{'Now':>12}")
     for name, old, new, worse in drift.metrics:
         fmt = _usd if name == "total_cost_usd" else _seconds if name.endswith("_s") else _pct

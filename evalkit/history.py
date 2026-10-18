@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,10 +17,24 @@ def summarise(report: dict, label: str | None = None) -> dict:
         "saved_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "label": label,
         "adapter": report["adapter"],
+        "models": report.get("models", []),
+        "git_commit": report.get("git_commit"),
         "runs_per_case": report["runs_per_case"],
         "metrics": report["metrics"],
         "cases": {c["id"]: c["status"] for c in report["cases"]},
     }
+
+
+def git_commit() -> str | None:
+    """The commit the code was at, with `+dirty` for uncommitted changes. None outside git."""
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short=12", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return sha + ("+dirty" if dirty.strip() else "")
 
 
 def save(path: Path, entry: dict) -> None:
@@ -43,6 +58,7 @@ class Drift:
     regressed: list[str] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
     not_compared: list[str] = field(default_factory=list)
+    models_changed: tuple[list[str], list[str]] | None = None
 
     @property
     def worse(self) -> bool:
@@ -58,6 +74,9 @@ def compare(baseline: dict, current: dict, tolerance: float) -> Drift:
     """
     before, after = baseline["cases"], current["cases"]
     drift = Drift(comparable=set(before) == set(after))
+    old_models, new_models = baseline.get("models"), current.get("models")
+    if old_models is not None and new_models is not None and old_models != new_models:
+        drift.models_changed = (old_models, new_models)
     for name in (*LOWER_IS_BETTER, *HIGHER_IS_BETTER, *FOR_INFORMATION):
         old, new = baseline["metrics"].get(name), current["metrics"].get(name)
         worse = False

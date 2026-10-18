@@ -33,6 +33,10 @@ class ModelGate:
         self.calls = 0
         self.reset_tally()
 
+    @property
+    def model(self) -> str | None:
+        return getattr(self.inner, "model", None)
+
     def reset_tally(self) -> None:
         self.cost_usd: float | None = None
         self.latency_s = 0.0
@@ -73,6 +77,7 @@ class ReplayClient:
 
     def __init__(self, path: Path):
         self.path = path
+        self.model = f"replay:{path.stem}"
         self.answers: dict[str, list[dict]] = defaultdict(list)
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():

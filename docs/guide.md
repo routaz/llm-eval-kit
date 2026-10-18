@@ -102,7 +102,7 @@ Five types carry everything. Two belong to the kit, three to the demo pipeline.
 | Type | Defined in | Holds | Created by |
 | --- | --- | --- | --- |
 | `Application` | [`evalkit/types.py`](../evalkit/types.py) | One case as the kit sends it: documents, applicant, requested amount | `context.py` from a golden case YAML |
-| `Proposal` (kit) | [`evalkit/types.py`](../evalkit/types.py) | What a reviewer would see: decision, risk rating, key fields, flags, and optional cost and latency | the project's adapter |
+| `Proposal` (kit) | [`evalkit/types.py`](../evalkit/types.py) | What a reviewer would see: decision, risk rating, key fields, flags, and optional cost, latency and model | the project's adapter |
 | `GoldenCase` | [`evalkit/context.py`](../evalkit/context.py) | An `Application` plus the expert's `Expected` answer, the risks it covers, and an optional counterfactual partner | `load_cases()` |
 | `RunResult` | [`evalkit/metrics.py`](../evalkit/metrics.py) | One run of one case, scored: wrong? flagged? which fields or flags were off? | `score()` |
 | `Extraction`, `Proposal` (pipeline), `Case` | [`examples/loan_pipeline/`](../examples/loan_pipeline/) | The model's parsed figures, the pipeline's own proposal, and the case record with its status and audit trail | `parsing.py`, `pipeline.py` |
@@ -141,7 +141,7 @@ Two `Proposal`s exist on purpose. The pipeline has its own; the adapter translat
 | [`context/risks.yaml`](../qa/context/risks.yaml) | The ranked risk register, R1–R7. The source of truth. |
 | [`golden/cases/`](../qa/golden/cases/) | Eight labelled cases. `expected:` blocks are set by experts and never edited to match the system. |
 | [`recordings/`](../qa/recordings/) | Real model answers, one JSONL file per model, keyed by a hash of the prompt. |
-| [`history.jsonl`](../qa/history.jsonl) | Saved evaluation baselines, one line per `eval --save`: adapter, label, metrics, each case's result. |
+| [`history.jsonl`](../qa/history.jsonl) | Saved evaluation baselines, one line per `eval --save`: adapter, models, git commit, label, metrics, each case's result. |
 | [`tests/`](../qa/tests/) | Layer 1: deterministic pipeline tests. `conftest.py` provides `ScriptedAI` (a fake model) and `make_email()`. |
 
 ### `examples/loan_pipeline/` — the system under test
@@ -149,7 +149,8 @@ Two `Proposal`s exist on purpose. The pipeline has its own; the adapter translat
 | File | What it does |
 | --- | --- |
 | [`intake.py`](../examples/loan_pipeline/intake.py) | `Inbox.receive()` turns one raw email into exactly one outcome: opened, attached, duplicate, needs attention or rejected. |
-| [`pipeline.py`](../examples/loan_pipeline/pipeline.py) | `LoanPipeline` holds cases and the audit log. `analyse()` asks the model, parses the answer and applies the rules. `propose()` and `debt_to_income()` are the business rules, in code. |
+| [`pipeline.py`](../examples/loan_pipeline/pipeline.py) | `LoanPipeline` holds cases and the audit log, optionally written to a JSONL file. `analyse()` asks the model, parses the answer and applies the rules. `propose()` and `debt_to_income()` are the business rules, in code, and `propose()` says which rule fired. |
+| [`audit.py`](../examples/loan_pipeline/audit.py) | `explain()` tells the story of one case from its audit events; `read_audit()` loads an audit file. Runs as `python -m examples.loan_pipeline.audit FILE CASE_ID`. |
 | [`ai.py`](../examples/loan_pipeline/ai.py) | The prompt contract: `PROMPT_HEADER`, `FLAG_CODES`, `EXTRACTION_SCHEMA`, `build_prompt()`. The `AIClient` interface. `KeywordModel`, the deterministic stand-in. |
 | [`parsing.py`](../examples/loan_pipeline/parsing.py) | `parse_extraction()` turns the model's raw text into an `Extraction` or raises `AIOutputError`. `to_amount()` reads "4 500 €" and friends. |
 | [`clients.py`](../examples/loan_pipeline/clients.py) | Real models: `ClaudeCodeClient` (runs `claude -p`) and `OpenAICompatibleClient` (for `soup serve`). |
@@ -229,7 +230,7 @@ stateDiagram-v2
   decided --> [*]
 ```
 
-Every transition appends an event to `pipeline.audit` and logs the case id and event name, never document text. `record_decision()` stores the reviewer, the human decision, the AI's decision and whether it was an override.
+Every transition appends a timestamped event to `pipeline.audit` (and to the `audit_to` JSONL file, if given) and logs the case id and event name, never document text. `analyse()` records what the model was given (`model`, `prompt_version`, `prompt_sha256`, each document's name and hash) on both `proposed` and `needs_attention`. `proposed` also records the extracted figures, the `rule` that decided, and the `RULES` thresholds in force. `record_decision()` stores the reviewer, the human decision, the AI's decision and whether it was an override. `explain()` in [`audit.py`](../examples/loan_pipeline/audit.py) turns these events back into plain text.
 
 ### An email, inside `Inbox.receive()`
 
@@ -263,10 +264,11 @@ Every transition appends an event to `pipeline.audit` and logs the case id and e
 
 ### `evalkit eval --save` and `evalkit drift`
 
-1. `eval` writes the adapter it used into `eval.json`. With `--save`, `summarise()` keeps the metrics and each case's status, and `save()` appends them to `qa/history.jsonl` with a timestamp and label.
+1. `eval` writes the adapter it used, the models named on the proposals and the git commit into `eval.json`. With `--save`, `summarise()` keeps the metrics and each case's status, and `save()` appends them to `qa/history.jsonl` with a timestamp and label.
 2. `drift` reads the latest `reports/eval.json` and finds the most recent baseline with the **same adapter**: a stand-in run is never compared with a Claude run.
 3. `compare()` judges the quality rates only when both runs covered the same cases, using `drift_tolerance`. Latency and cost are shown, never judged.
 4. It compares every case present in both runs: passed then and not now is a **regression** and fails the command regardless of the averages; the opposite is listed as fixed.
+5. If both runs name their models and the models differ, `drift` says so. A model change isn't a failure on its own; what it does to the rates and cases is.
 
 ### Recording and replay
 
