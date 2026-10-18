@@ -3,6 +3,7 @@ import logging
 import pytest
 
 from examples.loan_pipeline.documents import Doc
+from examples.loan_pipeline.pipeline import LoanPipeline
 from qa.tests.conftest import ScriptedAI, answer
 
 MARKER = "TEST-PII-7731"
@@ -20,6 +21,23 @@ def test_personal_data_never_reaches_the_logs(pipeline, caplog):
 
     assert caplog.records
     assert MARKER not in caplog.text
+
+
+@pytest.mark.covers("R4", "R3")
+def test_the_audit_file_traces_documents_by_hash_never_by_content(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    pipeline = LoanPipeline(ScriptedAI(answer()), audit_to=path)
+    case = pipeline.open_case(
+        {"name": f"Anna {MARKER}"}, [Doc("payslip.txt", f"Employee ID {MARKER}\nNet pay: 3,200")], 12000
+    )
+    pipeline.analyse(case.id)
+    pipeline.record_decision(case.id, "reviewer-1", "approve")
+    pipeline.ai = ScriptedAI("not json")
+    pipeline.analyse(case.id)
+
+    written = path.read_text(encoding="utf-8")
+    assert "payslip.txt" in written
+    assert MARKER not in written
 
 
 @pytest.mark.covers("R4", "R5")

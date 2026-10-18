@@ -7,6 +7,7 @@ from evalkit.adapter import StopEvaluation
 from evalkit.config import Thresholds
 from evalkit.evaluate import evaluate
 from evalkit.leakage import find_leaks, read_rows
+from evalkit.report import eval_json
 from evalkit.types import Application, Document
 from tests.helpers import FixedAdapter, case, proposal
 
@@ -25,6 +26,16 @@ def test_latency_is_measured_when_the_adapter_does_not_report_it():
 
     assert report.results[0].runs[0].latency_s >= 0
     assert report.metrics["total_cost_usd"] is None
+
+
+def test_the_report_names_the_models_behind_every_run():
+    named = proposal().with_changes(model="model-a")
+    report = evaluate(FixedAdapter({"c1": named, "c2": proposal()}), [case(), case("c2")], 1, Thresholds())
+    data = eval_json(report, "qa:a")
+
+    assert data["models"] == ["model-a"]
+    assert [c["runs"][0]["model"] for c in data["cases"]] == ["model-a", None]
+    assert "git_commit" in data
 
 
 def test_stop_evaluation_halts_the_run_instead_of_failing_a_case():

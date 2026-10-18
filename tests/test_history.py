@@ -1,9 +1,12 @@
-from evalkit.history import compare, latest_baseline, save, summarise
+from evalkit.history import compare, git_commit, latest_baseline, save, summarise
+from evalkit.report import drift_text
 
 
-def report(adapter="qa:a", error=0.0, consistency=1.0, cases=None, cost=None):
+def report(adapter="qa:a", error=0.0, consistency=1.0, cases=None, cost=None, models=None):
     return {
         "adapter": adapter,
+        "models": models or ["model-a"],
+        "git_commit": "abc123",
         "runs_per_case": 3,
         "metrics": {
             "error_rate": error,
@@ -59,3 +62,31 @@ def test_runs_over_different_cases_compare_cases_but_not_rates():
     assert not drift.comparable
     assert drift.not_compared == ["c2", "c3"]
     assert not drift.worse
+
+
+def test_a_baseline_records_which_models_and_commit_produced_it():
+    entry = summarise(report(models=["model-a"]), "first")
+
+    assert (entry["models"], entry["git_commit"]) == (["model-a"], "abc123")
+
+
+def test_a_model_change_is_shown_but_not_judged_on_its_own():
+    baseline = summarise(report(models=["model-a"]))
+    drift = compare(baseline, summarise(report(models=["model-b"])), tolerance=0)
+
+    assert drift.models_changed == (["model-a"], ["model-b"])
+    assert not drift.worse
+    assert "The model changed: model-a -> model-b" in drift_text(drift, baseline)
+
+
+def test_a_baseline_saved_before_models_were_recorded_is_still_compared():
+    old = summarise(report())
+    del old["models"]
+
+    assert compare(old, summarise(report()), tolerance=0).models_changed is None
+
+
+def test_the_git_commit_is_none_outside_a_repository(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    assert git_commit() is None

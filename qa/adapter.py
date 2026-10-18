@@ -36,6 +36,7 @@ class LoanPipelineAdapter:
             flags=p.flags,
             cost_usd=self.gate.cost_usd,
             latency_s=self.gate.latency_s,
+            model=self.gate.model,
         )
 
 
