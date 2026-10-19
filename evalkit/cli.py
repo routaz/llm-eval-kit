@@ -30,30 +30,40 @@ from evalkit.report import (
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="evalkit", description="Evaluate an AI-assisted decision pipeline.")
     parser.add_argument("--root", type=Path, default=None, help="folder holding evalkit.toml (default: cwd)")
-    sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("check", help="validate the risk register and golden cases")
-    ev = sub.add_parser("eval", help="run the golden dataset through the real pipeline")
-    ev.add_argument("--runs", type=int, help="runs per case (default from evalkit.toml)")
-    ev.add_argument("--cases", help="comma-separated case ids, to keep a paid run small")
-    ev.add_argument("--adapter", help="'module:factory' to evaluate instead of the configured adapter")
-    ev.add_argument("--save", action="store_true", help="keep this run as the baseline for `drift`")
-    ev.add_argument("--label", help="a note saved with the baseline, e.g. 'prompt v2'")
-    sub.add_parser("drift", help="compare the last eval report with the saved baseline for its adapter")
-    ov = sub.add_parser("oversight", help="test whether reviewers catch known AI errors")
-    ov_sub = ov.add_subparsers(dest="oversight_command", required=True)
-    plan = ov_sub.add_parser("plan", help="build a review queue seeded with known-wrong proposals")
-    plan.add_argument("--out", type=Path, help="folder for queue.json and answer_key.json")
-    plan.add_argument("--seed", type=int, default=0, help="shuffles the queue order")
-    plan.add_argument("--adapter", help="'module:factory' to use instead of the configured adapter")
-    ov_score = ov_sub.add_parser("score", help="score the team's decisions on a seeded queue")
-    ov_score.add_argument("--key", type=Path, help="answer_key.json from `oversight plan`")
-    ov_score.add_argument("--decisions", type=Path, required=True, help="CSV with item_id,decision")
-    cov = sub.add_parser("coverage", help="map risks to golden cases, tests and faults")
-    cov.add_argument("--strict", action="store_true", help="fail on unknown ids and uncovered risks")
-    mut = sub.add_parser("mutate", help="seed faults and check the evaluation notices each one")
-    mut.add_argument("--adapter", help="'module:factory' to use instead of the configured adapter")
-    leak = sub.add_parser("leakcheck", help="fail if any golden case appears in training data")
-    leak.add_argument("files", nargs="+", type=Path, help="training JSONL files")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("check", help="validate the risk register and golden cases")
+    eval_parser = commands.add_parser("eval", help="run the golden dataset through the real pipeline")
+    eval_parser.add_argument("--runs", type=int, help="runs per case (default from evalkit.toml)")
+    eval_parser.add_argument("--cases", help="comma-separated case ids, to keep a paid run small")
+    eval_parser.add_argument(
+        "--adapter", help="'module:factory' to evaluate instead of the configured adapter"
+    )
+    eval_parser.add_argument("--save", action="store_true", help="keep this run as the baseline for `drift`")
+    eval_parser.add_argument("--label", help="a note saved with the baseline, e.g. 'prompt v2'")
+    commands.add_parser("drift", help="compare the last eval report with the saved baseline for its adapter")
+    oversight_parser = commands.add_parser("oversight", help="test whether reviewers catch known AI errors")
+    oversight_commands = oversight_parser.add_subparsers(dest="oversight_command", required=True)
+    plan_parser = oversight_commands.add_parser(
+        "plan", help="build a review queue seeded with known-wrong proposals"
+    )
+    plan_parser.add_argument("--out", type=Path, help="folder for queue.json and answer_key.json")
+    plan_parser.add_argument("--seed", type=int, default=0, help="shuffles the queue order")
+    plan_parser.add_argument("--adapter", help="'module:factory' to use instead of the configured adapter")
+    score_parser = oversight_commands.add_parser("score", help="score the team's decisions on a seeded queue")
+    score_parser.add_argument("--key", type=Path, help="answer_key.json from `oversight plan`")
+    score_parser.add_argument("--decisions", type=Path, required=True, help="CSV with item_id,decision")
+    coverage_parser = commands.add_parser("coverage", help="map risks to golden cases, tests and faults")
+    coverage_parser.add_argument(
+        "--strict", action="store_true", help="fail on unknown ids and uncovered risks"
+    )
+    mutate_parser = commands.add_parser(
+        "mutate", help="seed faults and check the evaluation notices each one"
+    )
+    mutate_parser.add_argument("--adapter", help="'module:factory' to use instead of the configured adapter")
+    leakcheck_parser = commands.add_parser(
+        "leakcheck", help="fail if any golden case appears in training data"
+    )
+    leakcheck_parser.add_argument("files", nargs="+", type=Path, help="training JSONL files")
     args = parser.parse_args(argv)
 
     config = load_config(args.root)
