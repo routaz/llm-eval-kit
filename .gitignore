@@ -9,3 +9,5 @@ dist/
 training/data/
 training/output/
 training/extraction.schema.json
+.idea/
+.DS_Store
