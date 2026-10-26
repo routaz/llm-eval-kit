@@ -58,6 +58,9 @@ def _details(e: dict) -> list[str]:
             f"model: {e['model'] or 'unknown'}, prompt version {e['prompt_version']}, "
             f"prompt sha256 {e['prompt_sha256'][:12]}"
         )
+    if "response_sha256" in e:
+        answer = e["response_sha256"]
+        out.append(f"model answer sha256 {answer[:12]}" if answer else "no model answer")
     if e.get("documents") and isinstance(e["documents"], list):
         docs = ", ".join(f"{d['name']} (sha256 {d['sha256'][:12]})" for d in e["documents"])
         out.append(f"documents read: {docs}")

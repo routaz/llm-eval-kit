@@ -88,14 +88,18 @@ class LoanPipeline:
         case = self.cases[case_id]
         prompt = build_prompt(case.documents, tuple(str(v) for v in case.applicant.values()))
         inputs = self._inputs(case, prompt)
+        response = None
         try:
-            extraction = parse_extraction(self._complete(prompt, case))
+            response = self._complete(prompt, case)
+            extraction = parse_extraction(response)
         except AIOutputError as err:
+            inputs["response_sha256"] = sha256(response)
             return self.needs_attention(case.id, f"AI output rejected: {err}", **inputs)
         except TimeoutError:
             return self.needs_attention(case.id, f"AI timed out after {self.retries + 1} attempts", **inputs)
         except Exception as err:  # the model's server is down, the CLI failed, ...
             return self.needs_attention(case.id, f"AI call failed: {type(err).__name__}: {err}", **inputs)
+        inputs["response_sha256"] = sha256(response)
         p = case.proposal = propose(extraction, case.requested_amount)
         case.status, case.problem = "proposed", None
         self._record(
@@ -149,13 +153,15 @@ class LoanPipeline:
         """What the model was given: which model, which prompt, which documents.
 
         Documents are recorded by name and hash, never by text, so the audit holds no document
-        content. `prompt_sha256` is the key recordings are stored under, so a recorded model
-        answer can be found from the audit.
+        content. `prompt_sha256` is the key recordings are stored under, so the recorded answers
+        to this prompt can be found from the audit. `response_sha256`, filled in once the model
+        has answered, says which of them this case got; it stays None when no answer came.
         """
         return {
             "model": getattr(self.ai, "model", None),
             "prompt_version": PROMPT_VERSION,
             "prompt_sha256": sha256(prompt),
+            "response_sha256": None,
             "documents": [{"name": d.name, "sha256": sha256(d.text)} for d in case.documents],
         }
 

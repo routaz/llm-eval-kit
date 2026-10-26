@@ -42,6 +42,35 @@ def test_a_proposal_records_the_model_prompt_and_documents_it_came_from():
 
 
 @pytest.mark.covers("R3")
+def test_a_proposal_records_which_model_answer_it_came_from():
+    """One prompt can have several recorded answers (one per run); the hash says which one this case got."""
+    first, second = answer(net=3200), answer(net=3100)
+    pipeline = LoanPipeline(ModelGate(ScriptedAI(first, second)))
+    ids = [pipeline.open_case({}, DOCS, 12000).id for _ in range(2)]
+    for case_id in ids:
+        pipeline.analyse(case_id)
+
+    proposed = [event(pipeline, case_id, "proposed") for case_id in ids]
+    assert [e["response_sha256"] for e in proposed] == [sha(first), sha(second)]
+    assert proposed[0]["prompt_sha256"] == proposed[1]["prompt_sha256"]
+    assert f"model answer sha256 {sha(first)[:12]}" in pipeline.explain(ids[0])
+
+
+@pytest.mark.covers("R3")
+def test_a_rejected_answer_is_recorded_by_hash_and_a_failed_call_records_none():
+    pipeline = LoanPipeline(ScriptedAI("not json"), retries=0)
+    rejected = pipeline.open_case({}, DOCS, 12000)
+    pipeline.analyse(rejected.id)
+    pipeline.ai = ScriptedAI(RuntimeError("server down"))
+    failed = pipeline.open_case({}, DOCS, 12000)
+    pipeline.analyse(failed.id)
+
+    assert event(pipeline, rejected.id, "needs_attention")["response_sha256"] == sha("not json")
+    assert event(pipeline, failed.id, "needs_attention")["response_sha256"] is None
+    assert "no model answer" in pipeline.explain(failed.id)
+
+
+@pytest.mark.covers("R3")
 def test_a_proposal_records_the_figures_and_the_rule_that_decided_it(pipeline):
     pipeline.ai = ScriptedAI(answer(net=3200, debts=1500, stated=3200))
     case = pipeline.open_case({}, DOCS, 12000)
