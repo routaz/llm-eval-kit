@@ -13,6 +13,9 @@ import json
 import random
 from pathlib import Path
 
+from evalkit.config import load_config
+from evalkit.context import GoldenCase, load_cases
+from evalkit.leakage import find_leaks
 from examples.loan_pipeline.ai import EXTRACTION_SCHEMA, build_prompt
 from examples.loan_pipeline.clients import SYSTEM_PROMPT
 from examples.loan_pipeline.documents import Doc
@@ -140,15 +143,28 @@ def example(rng: random.Random) -> dict:
     return {
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_prompt(docs)},
+            # Redacted as the pipeline redacts it, so the model trains on the prompt it will be given.
+            {"role": "user", "content": build_prompt(docs, (name,))},
             {"role": "assistant", "content": json.dumps(label)},
         ]
     }
 
 
-def generate(count: int, seed: int) -> list[dict]:
+def generate(count: int, seed: int, golden: list[GoldenCase] | None = None) -> list[dict]:
+    """`count` examples, redrawing any that would contain a golden document.
+
+    Redacted, a short document such as "Credit report for [APPLICANT], total monthly payments: 300"
+    reads the same as a golden one with that figure. Kept apart like the names are.
+    """
+    if golden is None:
+        golden = load_cases(load_config(HERE.parent).cases)
     rng = random.Random(seed)
-    return [example(rng) for _ in range(count)]
+    rows: list[dict] = []
+    while len(rows) < count:
+        row = example(rng)
+        if not find_leaks(golden, ["\n".join(m["content"] for m in row["messages"])]):
+            rows.append(row)
+    return rows
 
 
 def main() -> None:

@@ -9,7 +9,7 @@ Most "LLM testing" either asserts on exact model output, which is flaky, or eyeb
 - **An evaluation is only worth something if it can fail.** The kit seeds faults into the system's answers on purpose (inflated income, hidden warnings, an obeyed prompt injection, a biased decision) and checks that the evaluation notices each one.
 - **Risks first, tests second.** A ranked risk register is the source of truth. Every golden case, test and fault names the risk it covers, and CI fails if a risk has nothing behind it.
 
-> **Status:** All five phases done. The harness evaluates real models (Claude through your own Claude Code login, local models fine-tuned with [Soup](https://github.com/MakazhanAlpamys/Soup)), tests whether human reviewers catch known errors, flags drift against a saved baseline, and can explain any single decision afterwards. 115 tests; CI on Linux and Windows.
+> **Status:** All five phases done. The harness evaluates real models (Claude through your own Claude Code login, local models fine-tuned with [Soup](https://github.com/MakazhanAlpamys/Soup)), tests whether human reviewers catch known errors, flags drift against a saved baseline, and can explain any single decision afterwards. 126 tests; CI on Linux and Windows.
 
 **New here?** [The guide to the code](docs/guide.md) covers the entry points, what every file does, and what happens step by step when each command runs.
 
@@ -188,7 +188,8 @@ uv run python -m examples.loan_pipeline.audit audit.jsonl case-0001   # the same
 case-0001
   2026-10-18T15:50:11+00:00  opened with 3 documents
   2026-10-18T15:50:11+00:00  AI-assisted proposal: refer (risk high)
-      model: replay:claude-opus-5-5, prompt version 9ae18b9186f1, prompt sha256 8c290a16e085
+      model: replay:claude-opus-5-5, prompt version c8c0d504b8cd, prompt sha256 b4e508e05326
+      model answer sha256 fc5d870faed7
       documents read: application_form.txt (sha256 8ceaf4ec57ff), payslip_2026-09.txt (sha256 cff174df96bf), credit_report.txt (sha256 0fa836d23aa3)
       figures: monthly_net_income 2100, monthly_debt_payments 700, stated_monthly_income 2100, requested_amount 20000, debt_to_income 0.4921
       flags shown to the reviewer: suspicious_instruction
@@ -200,7 +201,7 @@ case-0001
 | --- | --- |
 | What was the decision based on? | Each document's name and SHA-256 hash. A hash proves which version was read without copying its content into the audit |
 | Which model? | The client's `model` attribute, recorded with every proposal and with every failed call |
-| Which instructions? | `prompt_version`, a hash of the prompt contract, which changes whenever the instructions change. `prompt_sha256` is the key recordings are stored under, so with a recording you can look up the model's exact raw answer |
+| Which instructions? | `prompt_version`, a hash of the prompt contract, which changes whenever the instructions change. `prompt_sha256` is the key recordings are stored under, and `response_sha256` says which recorded answer this case got (one prompt has one answer per run), so with a recording you can look up the model's exact raw answer |
 | Why this outcome? | The extracted figures, the rule that fired, and the thresholds in force at the time |
 | How did a person affect it? | Reviewer, final decision, the AI's proposal, whether it was an override, and the reason |
 | When? | Every event has a UTC timestamp |
@@ -231,7 +232,7 @@ EVALKIT_MAX_CALLS=2 uv run evalkit eval --adapter qa.adapter:make_claude_adapter
 
 Each Claude call is one turn with no tools, a short system prompt in place of Claude Code's default, the output schema enforced, and an empty working folder so no project `CLAUDE.md` is sent. That keeps a call to a few seconds and about two cents. On a Claude subscription, that figure is the equivalent API price; the call counts against your plan's usage rather than being billed.
 
-**Record once, replay for free.** Every real answer is appended to `qa/recordings/<model>.jsonl`. `make_replay_adapter` plays them back, so CI evaluates real model output with no key and no cost, and a Layer 1 test checks every recorded answer still parses.
+**Record once, replay for free.** Every real answer is appended to `qa/recordings/<model>.jsonl`, stamped with a fingerprint of the client's settings (system prompt, schema, `max_tokens`). `make_replay_adapter` plays them back and refuses answers recorded with other settings, so CI evaluates real model output with no key and no cost, and a Layer 1 test checks every recorded answer still parses.
 
 **What the first real run found.** Claude got both cases right on substance: it refused to use gross pay as net, and it caught and ignored the hidden instruction. Both still failed, because the prompt asked for "anything the underwriter must check" without naming the flag codes the rules depend on. Claude wrote helpful sentences; the pipeline couldn't match them. The stand-in model had passed only because it was written with the codes built in. The fix was in the pipeline: the prompt now lists the codes, the schema enforces them, and free-text remarks go to a separate `notes` field. A Layer 1 test now pins that contract.
 
@@ -241,7 +242,7 @@ Each Claude call is one turn with no tools, a short system prompt in place of Cl
 
 ```bash
 uv run python -m training.generate --count 1000      # training/data/train.jsonl
-uv run evalkit leakcheck training/data/train.jsonl   # fails if any golden document leaked in
+uv run evalkit leakcheck training/data/train.jsonl   # fails if any golden document leaked in, even with the applicant redacted
 cd training && soup train --config soup.yaml         # Qwen2.5-7B-Instruct, 4-bit QLoRA, ~8 GB VRAM
 soup serve --model ./output --port 8000 \
   --structured-output json --json-schema extraction.schema.json
@@ -259,7 +260,7 @@ Every generated label is cross-checked against what the documents say before tra
 | `evalkit/faults.py`, `mutate.py` | kit | Fault building blocks and the check that each one is caught |
 | `evalkit/coverage.py` | kit | Maps risks to golden cases, `@pytest.mark.covers` tests and faults |
 | `evalkit/schemas/` | kit | JSON schemas for the risk register and golden cases |
-| `evalkit/leakage.py` | kit | Finds golden documents inside training data |
+| `evalkit/leakage.py` | kit | Finds golden documents inside training data, including copies with the applicant's details redacted |
 | `evalkit/oversight.py` | kit | Builds the seeded review queue and scores the team's decisions |
 | `evalkit/history.py` | kit | Saves baselines and compares runs for drift |
 | `evalkit/cli.py` | kit | `evalkit check · eval · drift · coverage · mutate · oversight · leakcheck` |
@@ -279,11 +280,11 @@ Every generated label is cross-checked against what the documents say before tra
 
 **Rules live in code, not in the model.** The model extracts figures; debt-to-income and the decision thresholds are computed in code. That makes the rules exactly testable and leaves the model one job.
 
-**A bad answer goes to a person, never into a proposal.** Malformed JSON, a missing key, an amount that isn't a number, a timeout after retries or a model that can't be reached all route the case to `needs_attention`. Nothing is guessed.
+**A bad answer goes to a person, never into a proposal.** Malformed JSON, a missing key, an amount that isn't a finite number (NaN would slip past every threshold), a timeout after retries or a model that can't be reached all route the case to `needs_attention`. Nothing is guessed.
 
 **Every email ends in exactly one visible outcome.** Opened, attached to an existing case, duplicate, needs attention or rejected. Nothing disappears silently.
 
-**Keep protected data out of the prompt.** The prompt carries the documents only, never the applicant profile. Layer 1 checks this; Layer 2 counterfactual pairs check the outcome.
+**Keep protected data out of the prompt.** The prompt carries the documents only, never the applicant profile, and where a document repeats the applicant's name or postcode it is replaced with `[APPLICANT]` or `[POSTCODE]`. Layer 1 checks this; Layer 2 counterfactual pairs check the outcome.
 
 **The prompt says document text is data.** Prompt injection is tested both ways: the pipeline test checks the instruction is in the prompt, and a golden case checks a hidden instruction is flagged, not obeyed.
 

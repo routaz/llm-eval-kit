@@ -5,7 +5,7 @@ from evalkit.context import load_cases
 from evalkit.leakage import find_leaks
 from examples.loan_pipeline.ai import KeywordModel, build_prompt
 from examples.loan_pipeline.parsing import parse_extraction
-from training.generate import generate
+from training.generate import FIRST_NAMES, LAST_NAMES, generate
 
 GOLDEN = Path(__file__).parents[1] / "qa" / "golden" / "cases"
 ROWS = generate(400, seed=11)
@@ -26,6 +26,14 @@ def test_a_golden_case_as_the_pipeline_prompts_it_is_a_leak():
         assert any(name in d.text for d in case.application.documents)
         assert name not in prompt  # redacted, so the golden text is no longer in the prompt verbatim
         assert find_leaks([case], [prompt]), case.id
+
+
+def test_training_prompts_are_redacted_like_the_pipeline_s():
+    """A model trained on names it will never see in production learns the wrong prompt."""
+    for row in ROWS:
+        prompt = row["messages"][1]["content"]
+        assert "[APPLICANT]" in prompt
+        assert not [n for n in FIRST_NAMES + LAST_NAMES if n in prompt]
 
 
 def test_every_label_matches_what_the_documents_say():

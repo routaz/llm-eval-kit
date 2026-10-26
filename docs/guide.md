@@ -73,7 +73,7 @@ Everything starts in one of these places.
 | `evalkit drift` | Did the last evaluation get worse than the saved baseline? | No rate moved the wrong way beyond the tolerance, and no case stopped passing |
 | `evalkit oversight plan` | Which known-wrong proposals should go into the review queue? | Always, once the queue is written |
 | `evalkit oversight score --decisions FILE` | Did the team catch them? | The decisions file is valid (and, if `min_catch_rate` is set, the catch rate met it) |
-| `evalkit leakcheck FILE...` | Is any golden case inside the training data? | No golden document found |
+| `evalkit leakcheck FILE...` | Is any golden case inside the training data? | No golden document found, verbatim or with the applicant redacted |
 
 `eval` takes `--cases id1,id2`, `--runs N`, `--adapter module:factory`, and `--save --label TEXT` to keep the run as a baseline; `mutate` and `oversight plan` take `--adapter`. Exit code 2 means a run was stopped on purpose (see `StopEvaluation` below).
 
@@ -126,7 +126,7 @@ Two `Proposal`s exist on purpose. The pipeline has its own; the adapter translat
 | [`faults.py`](../evalkit/faults.py) | Building blocks for defects to seed, and the wrapper that applies them to an adapter | `Fault`, `drop_flags()`, `scale_field()`, `force_decision()`, `unstable_decision()`, `when()`, `chain()` |
 | [`mutate.py`](../evalkit/mutate.py) | Runs a clean baseline, then each fault on the cases covering its risk; reports caught, survived or uncovered | `mutate()`, `MutationRun` |
 | [`coverage.py`](../evalkit/coverage.py) | Collects `covers` markers from pytest without running tests; maps every risk to cases, tests and faults | `build_coverage()`, `collect_test_covers()` |
-| [`leakage.py`](../evalkit/leakage.py) | Searches training JSONL for any golden document | `find_leaks()`, `read_rows()` |
+| [`leakage.py`](../evalkit/leakage.py) | Searches training JSONL for any golden document. The case's applicant values may appear as a placeholder (`[APPLICANT]`, `<name>`, `***`) or be missing; the rest, at least `min_chars`, must match exactly | `find_leaks()`, `read_rows()` |
 | [`oversight.py`](../evalkit/oversight.py) | Builds the seeded review queue and its answer key; reads and scores the team's decisions | `build_plan()`, `queue_rows()`, `answer_key()`, `read_decisions()`, `score_decisions()` |
 | [`history.py`](../evalkit/history.py) | Turns an eval report into a baseline entry; finds the latest baseline for an adapter; compares two runs | `summarise()`, `save()`, `latest_baseline()`, `compare()` |
 | [`report.py`](../evalkit/report.py) | Turns results into Markdown, JSON and terminal text | `eval_markdown()`, `eval_json()`, `write_eval()` |
@@ -136,11 +136,11 @@ Two `Proposal`s exist on purpose. The pipeline has its own; the adapter translat
 | File | What it does |
 | --- | --- |
 | [`adapter.py`](../qa/adapter.py) | `LoanPipelineAdapter.propose()` sends one `Application` through the real pipeline and translates the result into a kit `Proposal`. One factory per model: `make_adapter` (stand-in), `make_claude_adapter`, `make_soup_adapter`, `make_replay_adapter`. |
-| [`model_gate.py`](../qa/model_gate.py) | `ModelGate` wraps any model client: enforces the call budget, records each answer, tallies cost and latency. `ReplayClient` plays recordings back. `CallBudgetSpent` is a `StopEvaluation`. |
+| [`model_gate.py`](../qa/model_gate.py) | `ModelGate` wraps any model client: enforces the call budget, records each answer, tallies cost and latency. `ReplayClient` plays recordings back, refusing answers recorded with other client settings. `CallBudgetSpent` is a `StopEvaluation`. |
 | [`faults.py`](../qa/faults.py) | The six faults seeded for this pipeline, each tied to a risk id. |
 | [`context/risks.yaml`](../qa/context/risks.yaml) | The ranked risk register, R1–R7. The source of truth. |
 | [`golden/cases/`](../qa/golden/cases/) | Eight labelled cases. `expected:` blocks are set by experts and never edited to match the system. |
-| [`recordings/`](../qa/recordings/) | Real model answers, one JSONL file per model, keyed by a hash of the prompt. |
+| [`recordings/`](../qa/recordings/) | Real model answers, one JSONL file per model, keyed by a hash of the prompt and stamped with the client's `settings_key`. |
 | [`history.jsonl`](../qa/history.jsonl) | Saved evaluation baselines, one line per `eval --save`: adapter, models, git commit, label, metrics, each case's result. |
 | [`tests/`](../qa/tests/) | Layer 1: deterministic pipeline tests. `conftest.py` provides `ScriptedAI` (a fake model) and `make_email()`. |
 
@@ -151,8 +151,8 @@ Two `Proposal`s exist on purpose. The pipeline has its own; the adapter translat
 | [`intake.py`](../examples/loan_pipeline/intake.py) | `Inbox.receive()` turns one raw email into exactly one outcome: opened, attached, duplicate, needs attention or rejected. |
 | [`pipeline.py`](../examples/loan_pipeline/pipeline.py) | `LoanPipeline` holds cases and the audit log, optionally written to a JSONL file. `analyse()` asks the model, parses the answer and applies the rules. `propose()` and `debt_to_income()` are the business rules, in code, and `propose()` says which rule fired. |
 | [`audit.py`](../examples/loan_pipeline/audit.py) | `explain()` tells the story of one case from its audit events; `read_audit()` loads an audit file. Runs as `python -m examples.loan_pipeline.audit FILE CASE_ID`. |
-| [`ai.py`](../examples/loan_pipeline/ai.py) | The prompt contract: `PROMPT_HEADER`, `FLAG_CODES`, `EXTRACTION_SCHEMA`, `build_prompt()`. The `AIClient` interface. `KeywordModel`, the deterministic stand-in. |
-| [`parsing.py`](../examples/loan_pipeline/parsing.py) | `parse_extraction()` turns the model's raw text into an `Extraction` or raises `AIOutputError`. `to_amount()` reads "4 500 €" and friends. |
+| [`ai.py`](../examples/loan_pipeline/ai.py) | The prompt contract: `PROMPT_HEADER`, `FLAG_CODES`, `EXTRACTION_SCHEMA`, `build_prompt()`, `redact()`. The `AIClient` interface. `KeywordModel`, the deterministic stand-in. |
+| [`parsing.py`](../examples/loan_pipeline/parsing.py) | `parse_extraction()` turns the model's raw text into an `Extraction` or raises `AIOutputError`. `to_amount()` reads "4 500 €" and friends, and refuses negative, NaN and infinite amounts. |
 | [`clients.py`](../examples/loan_pipeline/clients.py) | Real models: `ClaudeCodeClient` (runs `claude -p`) and `OpenAICompatibleClient` (for `soup serve`). |
 | [`documents.py`](../examples/loan_pipeline/documents.py) | `Doc`, the pipeline's own document type. |
 
@@ -208,10 +208,10 @@ sequenceDiagram
 
 ### One model call, inside `LoanPipeline.analyse()`
 
-1. `build_prompt()` joins `PROMPT_HEADER` and the case's documents. The applicant profile is never included.
+1. `build_prompt()` joins `PROMPT_HEADER` and the case's documents. The applicant profile is never included, and `redact()` replaces the applicant's values where a document repeats them (each word of a multi-word name too) with `[APPLICANT]`, or `[POSTCODE]` for digits.
 2. `_complete()` calls the client, retrying on `TimeoutError` up to `retries` times.
 3. When the client is a `ModelGate`, it checks the budget *before* calling, times the call, adds the reported cost, and appends the answer to the recording file if one is set.
-4. `parse_extraction()` checks the answer is a JSON object with every key, flags and notes as lists of strings, and every amount a non-negative number. Anything else raises `AIOutputError`.
+4. `parse_extraction()` checks the answer is a JSON object with every key, flags and notes as lists of strings, and every amount a finite, non-negative number. Anything else raises `AIOutputError`.
 5. On `AIOutputError`, a final timeout, or any other failed call (an unreachable server, a CLI error), the case goes to `needs_attention` with the reason. No proposal is made.
 6. Otherwise `propose()` applies the rules: income mismatch above 10% adds a flag; no net income means refer; debt-to-income above 50% declines, above 35% or with any flag refers, otherwise approves.
 
@@ -230,7 +230,7 @@ stateDiagram-v2
   decided --> [*]
 ```
 
-Every transition appends a timestamped event to `pipeline.audit` (and to the `audit_to` JSONL file, if given) and logs the case id and event name, never document text. `analyse()` records what the model was given (`model`, `prompt_version`, `prompt_sha256`, each document's name and hash) on both `proposed` and `needs_attention`. `proposed` also records the extracted figures, the `rule` that decided, and the `RULES` thresholds in force. `record_decision()` stores the reviewer, the human decision, the AI's decision and whether it was an override. `explain()` in [`audit.py`](../examples/loan_pipeline/audit.py) turns these events back into plain text.
+Every transition appends a timestamped event to `pipeline.audit` (and to the `audit_to` JSONL file, if given) and logs the case id and event name, never document text. `analyse()` records what the model was given (`model`, `prompt_version`, `prompt_sha256`, each document's name and hash) on both `proposed` and `needs_attention`, plus `response_sha256`, the hash of the answer the model gave (None if no answer came), which picks out this case's answer among several recordings of one prompt. `proposed` also records the extracted figures, the `rule` that decided, and the `RULES` thresholds in force. `record_decision()` stores the reviewer, the human decision, the AI's decision and whether it was an override. `explain()` in [`audit.py`](../examples/loan_pipeline/audit.py) turns these events back into plain text.
 
 ### An email, inside `Inbox.receive()`
 
@@ -273,19 +273,20 @@ Every transition appends a timestamped event to `pipeline.audit` (and to the `au
 ### Recording and replay
 
 1. A recording factory (`make_claude_adapter`, `make_soup_adapter`) gives its `ModelGate` a `record_to` path under `qa/recordings/`.
-2. Every answer is appended as `{prompt_sha256, response, cost_usd, latency_s}`. Runs accumulate; nothing is overwritten.
+2. Every answer is appended as `{prompt_sha256, settings, response, cost_usd, latency_s}`. Runs accumulate; nothing is overwritten.
 3. `make_replay_adapter` reads the file into `ReplayClient`. For each prompt it returns the recorded answers in turn, cycling, so consistency is measured on what the model really said.
 4. Recorded cost and latency are replayed too, so a replayed report shows what the original run cost.
 5. **Any change to the prompt invalidates the recordings**, because they're keyed by the prompt's hash. A replayed case then fails with "no recording for this prompt"; record again.
 6. **So does any change to what the client sends besides the prompt** (system prompt, schema, `max_tokens`). Each answer carries the client's `settings_key` (`claude_settings()` or `local_model_settings()` in `clients.py`), and `ReplayClient` refuses answers recorded with other settings.
-6. [`qa/tests/test_recorded_outputs.py`](../qa/tests/test_recorded_outputs.py) checks every recorded answer still parses and uses only defined flag codes.
+7. [`qa/tests/test_recorded_outputs.py`](../qa/tests/test_recorded_outputs.py) checks every recorded answer still parses and uses only defined flag codes.
 
 ### Training data
 
 1. `generate()` draws each example from six weighted scenarios: complete, gross pay only, no payslip, no credit report, a hidden instruction, a stated income that differs.
-2. It builds the documents, writes the correct answer from the same parameters, and renders the prompt with the pipeline's own `build_prompt()`, so training matches production exactly.
-3. [`tests/test_training_data.py`](../tests/test_training_data.py) cross-checks every label against what the stand-in model reads from the same documents, and runs the leak check against the real golden cases.
-4. `evalkit leakcheck` repeats the leak check on the file you're about to train on.
+2. It builds the documents, writes the correct answer from the same parameters, and renders the prompt with the pipeline's own `build_prompt()`, redacting the applicant's name as the pipeline does, so training matches production exactly.
+3. An example that would contain a golden document is redrawn. Redacted, a short synthetic credit report reads the same as a golden one with the same figure, so these are kept apart the way the names are.
+4. [`tests/test_training_data.py`](../tests/test_training_data.py) cross-checks every label against what the stand-in model reads from the same documents, checks every prompt is redacted, and runs the leak check against the real golden cases.
+5. `evalkit leakcheck` repeats the leak check on the file you're about to train on.
 
 ### CI
 
