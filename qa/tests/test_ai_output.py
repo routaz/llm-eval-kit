@@ -23,6 +23,8 @@ def analyse_with(pipeline, response):
         ('{"monthly_net_income": 3200, "flags": []}', "missing keys"),
         (answer(net="about three thousand"), "not an amount"),
         (answer(net=-3200), "negative"),
+        (answer(net=float("nan")), "not a finite amount"),
+        (answer(debts=float("inf")), "not a finite amount"),
         (answer().replace('"flags": []', '"flags": "none"'), "flags must be a list"),
     ],
 )

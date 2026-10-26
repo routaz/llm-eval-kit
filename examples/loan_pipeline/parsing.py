@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 
@@ -50,6 +51,8 @@ def to_amount(value, name: str = "value") -> float | None:
         amount = _parse_text_amount(value, name)
     else:
         raise AIOutputError(f"{name} is not an amount: {value!r}")
+    if not math.isfinite(amount):
+        raise AIOutputError(f"{name} is not a finite amount: {value!r}")
     if amount < 0:
         raise AIOutputError(f"{name} is negative: {amount}")
     return amount
