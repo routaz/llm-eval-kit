@@ -86,7 +86,7 @@ class LoanPipeline:
     def analyse(self, case_id: str) -> Case:
         """Ask the model for figures, then decide in code. A bad answer goes to a person, not a proposal."""
         case = self.cases[case_id]
-        prompt = build_prompt(case.documents)
+        prompt = build_prompt(case.documents, tuple(str(v) for v in case.applicant.values()))
         inputs = self._inputs(case, prompt)
         try:
             extraction = parse_extraction(self._complete(prompt, case))

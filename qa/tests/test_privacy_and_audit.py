@@ -46,7 +46,9 @@ def test_the_prompt_holds_only_this_cases_documents_and_no_applicant_profile(pip
         {"name": "Other Person"}, [Doc("payslip.txt", "Net pay: 9,999 OTHER-CASE")], 5000
     )
     case = pipeline.open_case(
-        {"name": "Anna Virtanen", "postcode": "00100"}, [Doc("payslip.txt", "Net pay: 3,200")], 12000
+        {"name": "Anna Virtanen", "postcode": "00100"},
+        [Doc("payslip.txt", "Employee: Anna Virtanen, 00100 Helsinki\nNet pay: 3,200")],
+        12000,
     )
     pipeline.analyse(case.id)
 
@@ -54,6 +56,8 @@ def test_the_prompt_holds_only_this_cases_documents_and_no_applicant_profile(pip
     assert "OTHER-CASE" not in prompt
     assert other.id not in prompt
     assert "00100" not in prompt
+    assert "Virtanen" not in prompt
+    assert "Net pay: 3,200" in prompt
 
 
 @pytest.mark.covers("R4")
