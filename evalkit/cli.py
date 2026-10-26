@@ -69,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(args.root)
     try:
         risks = load_risks(config.risks)
-        cases = load_cases(config.cases, {r.id for r in risks})
+        cases = load_cases(config.cases, {risk.id for risk in risks})
     except ContextError as err:
         print("Context problems:", *err.problems, sep="\n  ")
         return 1

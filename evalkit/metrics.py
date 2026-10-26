@@ -44,9 +44,9 @@ def fields_match(expected: float | None, actual: float | None, tolerance: float)
 
 def score(expected: Expected, proposal: Proposal, tolerance: float) -> RunResult:
     field_errors = tuple(
-        f"{name}: expected {want}, got {proposal.fields.get(name)}"
-        for name, want in expected.fields.items()
-        if not fields_match(want, proposal.fields.get(name), tolerance)
+        f"{field_name}: expected {expected_value}, got {proposal.fields.get(field_name)}"
+        for field_name, expected_value in expected.fields.items()
+        if not fields_match(expected_value, proposal.fields.get(field_name), tolerance)
     )
     return RunResult(
         proposal=proposal,
