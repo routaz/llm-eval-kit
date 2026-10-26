@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -12,6 +13,23 @@ from collections.abc import Sequence
 from examples.loan_pipeline.ai import EXTRACTION_SCHEMA
 
 SYSTEM_PROMPT = "You extract figures from loan application documents. Reply with the JSON object only."
+
+
+def _fingerprint(*parts: object) -> str:
+    return hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+
+
+def claude_settings() -> str:
+    """Fingerprint of what ClaudeCodeClient sends besides the prompt.
+
+    Recordings made with other settings don't replay.
+    """
+    return _fingerprint(SYSTEM_PROMPT, EXTRACTION_SCHEMA)
+
+
+def local_model_settings(max_tokens: int = 512) -> str:
+    """Fingerprint of what OpenAICompatibleClient sends besides the prompt and model name."""
+    return _fingerprint(SYSTEM_PROMPT, 0, max_tokens)
 
 
 class ClaudeCodeClient:
@@ -32,6 +50,7 @@ class ClaudeCodeClient:
         self.model = model
         self.command = list(command) if command else [shutil.which("claude") or "claude"]
         self.timeout_s = timeout_s
+        self.settings_key = claude_settings()
         self.last_cost_usd: float | None = None
         self.last_latency_s: float | None = None
 
@@ -91,6 +110,7 @@ class OpenAICompatibleClient:
         self.model = model
         self.timeout_s = timeout_s
         self.max_tokens = max_tokens
+        self.settings_key = local_model_settings(max_tokens)
         self.last_cost_usd: float | None = None
         self.last_latency_s: float | None = None
 

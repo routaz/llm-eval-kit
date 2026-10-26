@@ -277,6 +277,7 @@ Every transition appends a timestamped event to `pipeline.audit` (and to the `au
 3. `make_replay_adapter` reads the file into `ReplayClient`. For each prompt it returns the recorded answers in turn, cycling, so consistency is measured on what the model really said.
 4. Recorded cost and latency are replayed too, so a replayed report shows what the original run cost.
 5. **Any change to the prompt invalidates the recordings**, because they're keyed by the prompt's hash. A replayed case then fails with "no recording for this prompt"; record again.
+6. **So does any change to what the client sends besides the prompt** (system prompt, schema, `max_tokens`). Each answer carries the client's `settings_key` (`claude_settings()` or `local_model_settings()` in `clients.py`), and `ReplayClient` refuses answers recorded with other settings.
 6. [`qa/tests/test_recorded_outputs.py`](../qa/tests/test_recorded_outputs.py) checks every recorded answer still parses and uses only defined flag codes.
 
 ### Training data

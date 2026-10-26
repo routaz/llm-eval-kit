@@ -5,7 +5,12 @@ from pathlib import Path
 
 from evalkit import Application, Proposal
 from examples.loan_pipeline.ai import AIClient, KeywordModel
-from examples.loan_pipeline.clients import ClaudeCodeClient, OpenAICompatibleClient
+from examples.loan_pipeline.clients import (
+    ClaudeCodeClient,
+    OpenAICompatibleClient,
+    claude_settings,
+    local_model_settings,
+)
 from examples.loan_pipeline.documents import Doc
 from examples.loan_pipeline.pipeline import LoanPipeline
 from qa.model_gate import ModelGate, ReplayClient
@@ -69,4 +74,5 @@ def make_soup_adapter() -> LoanPipelineAdapter:
 def make_replay_adapter() -> LoanPipelineAdapter:
     """Replays a recording from qa/recordings/ (EVALKIT_REPLAY, default claude-opus-5-5) with no calls."""
     name = os.environ.get("EVALKIT_REPLAY", "claude-opus-5-5")
-    return LoanPipelineAdapter(ReplayClient(RECORDINGS / f"{name}.jsonl"))
+    settings = local_model_settings() if name.startswith("soup-") else claude_settings()
+    return LoanPipelineAdapter(ReplayClient(RECORDINGS / f"{name}.jsonl", settings))

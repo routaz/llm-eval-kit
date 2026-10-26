@@ -64,3 +64,35 @@ def test_replaying_a_prompt_that_was_never_recorded_says_so(tmp_path):
 
     with pytest.raises(LookupError, match="no recording"):
         ReplayClient(path).complete("prompt B")
+
+
+class SettingsModel(PricedModel):
+    def __init__(self, settings_key: str):
+        super().__init__()
+        self.settings_key = settings_key
+
+
+def test_each_recorded_answer_carries_the_client_settings(tmp_path):
+    path = tmp_path / "model.jsonl"
+    ModelGate(SettingsModel("v1"), record_to=path).complete("prompt A")
+
+    assert ReplayClient(path, settings="v1").complete("prompt A") == "first"
+
+
+def test_answers_recorded_with_other_settings_are_refused(tmp_path):
+    path = tmp_path / "model.jsonl"
+    ModelGate(SettingsModel("v1"), record_to=path).complete("prompt A")
+
+    with pytest.raises(LookupError, match="other settings"):
+        ReplayClient(path, settings="v2").complete("prompt A")
+
+
+def test_changing_the_system_prompt_changes_the_settings(monkeypatch):
+    from examples.loan_pipeline import clients
+
+    before = clients.claude_settings(), clients.local_model_settings()
+    monkeypatch.setattr(clients, "SYSTEM_PROMPT", "Be generous with income.")
+
+    assert clients.claude_settings() != before[0]
+    assert clients.local_model_settings() != before[1]
+    assert clients.local_model_settings(256) != clients.local_model_settings()

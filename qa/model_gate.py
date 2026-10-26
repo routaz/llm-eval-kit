@@ -63,6 +63,9 @@ class ModelGate:
         self.record_to.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "prompt_sha256": prompt_key(prompt),
+            # What the client sends besides the prompt (system prompt, schema, ...), so replay can
+            # refuse answers given to a question that was asked differently.
+            "settings": getattr(self.inner, "settings_key", None),
             "response": response,
             "cost_usd": cost,
             "latency_s": latency,
@@ -73,10 +76,15 @@ class ModelGate:
 
 class ReplayClient:
     """Plays back recorded answers. Several recordings of one prompt are returned in turn,
-    so consistency across runs is measured on what the real model actually said."""
+    so consistency across runs is measured on what the real model actually said.
 
-    def __init__(self, path: Path):
+    `settings` is the recording client's current `settings_key`. Answers recorded with other
+    settings are refused.
+    """
+
+    def __init__(self, path: Path, settings: str | None = None):
         self.path = path
+        self.settings = settings
         self.model = f"replay:{path.stem}"
         self.answers: dict[str, list[dict]] = defaultdict(list)
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -91,7 +99,12 @@ class ReplayClient:
         key = prompt_key(prompt)
         if key not in self.answers:
             raise LookupError(f"no recording for this prompt in {self.path.name}; record it first")
-        recorded = self.answers[key]
+        recorded = [e for e in self.answers[key] if e.get("settings") == self.settings]
+        if not recorded:
+            raise LookupError(
+                f"recordings of this prompt in {self.path.name} were made with other settings "
+                f"(system prompt, schema, ...), not {self.settings}; record again"
+            )
         entry = recorded[self._served[key] % len(recorded)]
         self._served[key] += 1
         self.last_cost_usd = entry["cost_usd"]
