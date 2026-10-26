@@ -86,7 +86,9 @@ def load_cases(folder: Path, risk_ids: set[str] | None = None) -> list[GoldenCas
         if ids.count(case.id) > 1:
             problems.append(f"duplicate case id {case.id}")
         if risk_ids is not None:
-            problems += [f"{case.id}: covers unknown risk {risk}" for risk in case.covers if risk not in risk_ids]
+            problems += [
+                f"{case.id}: covers unknown risk {risk}" for risk in case.covers if risk not in risk_ids
+            ]
         if case.counterfactual_of and case.counterfactual_of not in ids:
             problems.append(f"{case.id}: counterfactual_of unknown case {case.counterfactual_of}")
     if not cases and not problems:
