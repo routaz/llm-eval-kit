@@ -3,7 +3,7 @@ from pathlib import Path
 
 from evalkit.context import load_cases
 from evalkit.leakage import find_leaks
-from examples.loan_pipeline.ai import KeywordModel
+from examples.loan_pipeline.ai import KeywordModel, build_prompt
 from examples.loan_pipeline.parsing import parse_extraction
 from training.generate import generate
 
@@ -15,6 +15,17 @@ def test_no_golden_case_leaks_into_the_training_data():
     texts = ["\n".join(m["content"] for m in row["messages"]) for row in ROWS]
 
     assert find_leaks(load_cases(GOLDEN), texts) == []
+
+
+def test_a_golden_case_as_the_pipeline_prompts_it_is_a_leak():
+    """Training rows built from logged prompts carry redacted documents; they must still be caught."""
+    cases = load_cases(GOLDEN)
+    for case in cases:
+        prompt = build_prompt(list(case.application.documents), tuple(case.application.applicant.values()))
+        name = case.application.applicant["name"]
+        assert any(name in d.text for d in case.application.documents)
+        assert name not in prompt  # redacted, so the golden text is no longer in the prompt verbatim
+        assert find_leaks([case], [prompt]), case.id
 
 
 def test_every_label_matches_what_the_documents_say():

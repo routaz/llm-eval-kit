@@ -61,6 +61,37 @@ def test_a_golden_document_inside_training_data_is_a_leak():
     assert find_leaks([golden_with(PAYSLIP)], [row.replace("ANNA", "ELSA")]) == []
 
 
+def test_a_golden_document_with_the_applicant_redacted_is_still_a_leak():
+    golden = replace(
+        golden_with(PAYSLIP + "\nAddress: 00100 Helsinki"),
+        application=Application(
+            "c1",
+            (Document("payslip.txt", PAYSLIP + "\nAddress: 00100 Helsinki"),),
+            {"name": "Anna Virtanen", "postcode": "00100"},
+        ),
+    )
+    redacted = PAYSLIP.replace("Anna Virtanen", "[APPLICANT]") + "\nAddress: [POSTCODE] Helsinki"
+
+    assert find_leaks([golden], [redacted]) == ["c1: payslip.txt"]
+    assert find_leaks([golden], [redacted.replace("[APPLICANT]", "")]) == ["c1: payslip.txt"]
+    assert find_leaks([golden], [redacted.replace("Anna", "[APPLICANT]")]) == ["c1: payslip.txt"]
+    assert find_leaks([golden], [redacted.replace("[APPLICANT]", "***")]) == ["c1: payslip.txt"]
+    assert find_leaks([golden], [redacted.replace("3,200.00", "3,250.00")]) == []
+    assert find_leaks([golden], [redacted.replace("[APPLICANT]", "Elsa Laine")]) == []
+
+
+def test_a_document_that_is_mostly_the_applicant_is_too_short_to_count():
+    text = "Applicant: Anna Virtanen, 00100 Helsinki, Finland"
+    golden = replace(
+        golden_with(text),
+        application=Application(
+            "c1", (Document("form.txt", text),), {"name": "Anna Virtanen", "postcode": "00100"}
+        ),
+    )
+
+    assert find_leaks([golden], ["Applicant: [APPLICANT], [POSTCODE] Helsinki, Finland"]) == []
+
+
 def test_short_boilerplate_is_not_counted_as_a_leak():
     assert find_leaks([golden_with("Net pay: 3,200")], ["Net pay: 3,200"]) == []
 
